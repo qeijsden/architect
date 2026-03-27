@@ -1,0 +1,15 @@
+"appbuild"
+{
+  "appid" "4333470"
+  "desc" "Architect automated build"
+  "buildoutput" "steam_build_output"
+  "contentroot" "."
+  "setlive" ""
+  "preview" "0"
+  "local" ""
+
+  "depots"
+  {
+    "4333471" "depot_shared.vdf"
+  }
+}

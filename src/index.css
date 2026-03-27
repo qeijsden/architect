@@ -1,0 +1,215 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Playful pixel game palette */
+    --background: 220 20% 10%;
+    --foreground: 180 100% 95%;
+
+    --card: 220 25% 14%;
+    --card-foreground: 180 100% 95%;
+
+    --popover: 220 25% 14%;
+    --popover-foreground: 180 100% 95%;
+
+    /* Bright cyan - main brand */
+    --primary: 180 85% 55%;
+    --primary-foreground: 220 20% 10%;
+
+    /* Warm coral - secondary */
+    --secondary: 15 90% 60%;
+    --secondary-foreground: 220 20% 10%;
+
+    /* Muted dark */
+    --muted: 220 20% 18%;
+    --muted-foreground: 220 15% 55%;
+
+    /* Accent - golden yellow */
+    --accent: 45 100% 55%;
+    --accent-foreground: 220 20% 10%;
+
+    /* Danger - hot pink */
+    --destructive: 340 85% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Success - lime green */
+    --success: 120 70% 50%;
+    --success-foreground: 220 20% 10%;
+
+    /* Purple accent */
+    --purple: 270 80% 65%;
+    --purple-foreground: 220 20% 10%;
+
+    --border: 220 20% 25%;
+    --input: 220 20% 20%;
+    --ring: 180 85% 55%;
+
+    --radius: 0.75rem;
+
+    /* Custom game colors */
+    --platform: 220 30% 35%;
+    --hazard: 0 80% 50%;
+    --goal: 120 70% 50%;
+    --player: 180 85% 55%;
+    --ground: 30 40% 25%;
+    
+    /* New block types */
+    --game-moving: 270 60% 50%;
+    --game-ice: 200 80% 70%;
+    --game-teleporter: 290 60% 65%;
+    --game-crumbling: 25 40% 45%;
+    --game-conveyor: 210 15% 55%;
+    --game-beam: 20 80% 60%;
+    --game-ghost: 185 70% 60%;
+    --game-checkpoint: 90 50% 55%;
+    --game-lowgrav: 270 80% 65%;
+    --game-tentacle: 340 85% 55%;
+    --game-speedgate: 45 100% 55%;
+    --game-ramp: 220 30% 35%;
+    --game-cannon: 15 90% 55%;
+    --game-wind: 180 100% 60%;
+    --game-impact: 340 100% 45%;
+    --game-push: 60 100% 50%;
+    --game-water: 200 100% 50%;
+    --game-walljump: 290 100% 60%;
+    --game-platform-thick: 220 30% 45%;
+
+    --sidebar-background: 220 25% 12%;
+    --sidebar-foreground: 180 100% 95%;
+    --sidebar-primary: 180 85% 55%;
+    --sidebar-primary-foreground: 220 20% 10%;
+    --sidebar-accent: 220 20% 18%;
+    --sidebar-accent-foreground: 180 100% 95%;
+    --sidebar-border: 220 20% 25%;
+    --sidebar-ring: 180 85% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'VT323', monospace;
+    image-rendering: pixelated;
+  }
+}
+
+@layer components {
+  .font-pixel {
+    font-family: 'Press Start 2P', cursive;
+  }
+
+  .font-pixel-body {
+    font-family: 'VT323', monospace;
+  }
+
+  .pixel-border {
+    box-shadow: 
+      4px 0 0 0 hsl(var(--border)),
+      -4px 0 0 0 hsl(var(--border)),
+      0 4px 0 0 hsl(var(--border)),
+      0 -4px 0 0 hsl(var(--border));
+  }
+
+  .pixel-shadow {
+    box-shadow: 
+      4px 4px 0 0 hsl(var(--background) / 0.5);
+  }
+
+  .game-glow {
+    box-shadow: 
+      0 0 20px hsl(var(--primary) / 0.4),
+      0 0 40px hsl(var(--primary) / 0.2);
+  }
+
+  .text-glow {
+    text-shadow: 
+      0 0 10px hsl(var(--primary) / 0.8),
+      0 0 20px hsl(var(--primary) / 0.4);
+  }
+
+  .btn-bounce {
+    transition: transform 0.1s ease;
+  }
+
+  .btn-bounce:hover {
+    transform: translateY(-2px);
+  }
+
+  .btn-bounce:active {
+    transform: translateY(2px);
+  }
+
+  /* Custom game scrollbar */
+  .game-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .game-scrollbar::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+    border: 2px solid hsl(var(--border));
+  }
+
+  .game-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--primary));
+    border: 2px solid hsl(var(--border));
+  }
+
+  .game-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.8);
+  }
+
+  .game-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--primary)) hsl(var(--muted));
+  }
+}
+
+@layer utilities {
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .animate-bounce-slow {
+    animation: bounce-slow 1s ease-in-out infinite;
+  }
+
+  .animate-wiggle {
+    animation: wiggle 0.5s ease-in-out infinite;
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { 
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.4);
+  }
+  50% { 
+    box-shadow: 0 0 40px hsl(var(--primary) / 0.8);
+  }
+}
+
+@keyframes bounce-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes wiggle {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}

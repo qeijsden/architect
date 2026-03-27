@@ -1,0 +1,12 @@
+"DepotBuildConfig"
+{
+  "DepotID" "${STEAM_DEPOT_WINDOWS}"
+  "ContentRoot" ".."
+  "FileMapping"
+  {
+    "LocalPath" "src-tauri/target/release/bundle/nsis/*"
+    "DepotPath" "."
+    "recursive" "1"
+  }
+  "FileExclusion" "*.pdb"
+}

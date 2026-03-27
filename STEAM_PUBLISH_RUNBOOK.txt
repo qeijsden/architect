@@ -1,0 +1,16 @@
+Steam Publish (AppID 4333470, Depot 4333471)
+
+ONE COMMAND FROM MAC - build + publish both macOS and Windows:
+git push
+
+  GitHub Actions will automatically:
+  - Build macOS app on a macOS runner and publish to Steam
+  - Build Windows NSIS exe on a Windows runner and publish to Steam
+
+  Required: add these secrets to your GitHub repo settings first:
+  STEAM_USERNAME = skullkin9
+  STEAM_PASSWORD = (your steam password)
+  (Settings -> Secrets and variables -> Actions -> New repository secret)
+
+macOS only (build + publish locally, no GitHub needed):
+cd /Users/skullkin9og/Downloads/player-s-playground-main && source "$HOME/.cargo/env" && npm run steam:sdk:import && npm run build && npm exec tauri build -- --bundles app,dmg && /Users/skullkin9og/Downloads/sdk/tools/ContentBuilder/builder_osx/steamcmd.sh +login skullkin9 YOUR_PASSWORD +run_app_build "$PWD/steam/app_build_macos_only.vdf" +quit

@@ -1,0 +1,18 @@
+"DepotBuildConfig"
+{
+  "DepotID" "4333471"
+  "ContentRoot" ".."
+  "FileMapping"
+  {
+    "LocalPath" "src-tauri/target/release/bundle/macos/Architect.app/*"
+    "DepotPath" "macos"
+    "recursive" "1"
+  }
+  "FileMapping"
+  {
+    "LocalPath" "src-tauri/target/release/bundle/nsis/*"
+    "DepotPath" "windows"
+    "recursive" "1"
+  }
+  "FileExclusion" "*.pdb"
+}

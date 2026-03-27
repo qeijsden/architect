@@ -1,0 +1,8 @@
+/Users/skullkin9og/Downloads/player-s-playground-main/src-tauri/target/release/deps/byteorder-107b99cc248c2fb8.d: /Users/skullkin9og/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/byteorder-1.5.0/src/lib.rs /Users/skullkin9og/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/byteorder-1.5.0/src/io.rs
+
+/Users/skullkin9og/Downloads/player-s-playground-main/src-tauri/target/release/deps/libbyteorder-107b99cc248c2fb8.rlib: /Users/skullkin9og/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/byteorder-1.5.0/src/lib.rs /Users/skullkin9og/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/byteorder-1.5.0/src/io.rs
+
+/Users/skullkin9og/Downloads/player-s-playground-main/src-tauri/target/release/deps/libbyteorder-107b99cc248c2fb8.rmeta: /Users/skullkin9og/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/byteorder-1.5.0/src/lib.rs /Users/skullkin9og/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/byteorder-1.5.0/src/io.rs
+
+/Users/skullkin9og/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/byteorder-1.5.0/src/lib.rs:
+/Users/skullkin9og/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/byteorder-1.5.0/src/io.rs:
