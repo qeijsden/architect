@@ -5,8 +5,21 @@ cd "$PROJECT"
 
 # Install gh CLI if missing
 if ! command -v gh &>/dev/null; then
-  echo "Installing GitHub CLI..."
-  brew install gh
+  if command -v brew &>/dev/null; then
+    echo "Installing GitHub CLI..."
+    brew install gh
+  else
+    echo ""
+    echo "GitHub CLI ('gh') is required for the cross-platform workflow."
+    echo "Homebrew is not installed, so this script cannot install it automatically."
+    echo ""
+    echo "Install one of these first, then rerun the script:"
+    echo "  1. Homebrew: https://brew.sh"
+    echo "     then: brew install gh"
+    echo "  2. GitHub CLI directly: https://cli.github.com/"
+    echo ""
+    exit 1
+  fi
 fi
 
 # Require gh auth
