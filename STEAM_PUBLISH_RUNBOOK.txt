@@ -5,7 +5,7 @@ git push
 
   GitHub Actions will automatically:
   - Build macOS app on a macOS runner and publish to Steam
-  - Build Windows NSIS exe on a Windows runner and publish to Steam
+  - Build a Windows Steam payload on a Windows runner and publish to Steam
 
   Required: add these secrets to your GitHub repo settings first:
   STEAM_USERNAME = skullkin9

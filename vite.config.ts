@@ -3,10 +3,11 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 
-// https://vitejs.dev/config/
-export default defineConfig(({ mode }) => {
+// Use relative asset URLs for packaged desktop builds so Tauri can load
+// frontend files from the app bundle instead of requesting them from root.
+export default defineConfig(({ command, mode }) => {
   return {
-    base: '/',
+    base: command === 'build' ? './' : '/',
     build: {
       outDir: 'dist',
       emptyOutDir: true,

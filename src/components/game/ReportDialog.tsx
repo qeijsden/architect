@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { GameButton } from '@/components/ui/GameButton';
-import { toast } from 'sonner';
+import { toast } from '@/lib/announcer';
 
 type ReportDialogProps = {
   levelId: string;
@@ -12,6 +12,7 @@ type ReportDialogProps = {
 const REPORTS_KEY = 'architect_reports';
 
 export function ReportDialog({ levelId, levelName, userId, onClose }: ReportDialogProps) {
+  const [reportType, setReportType] = useState<'inappropriate_level' | 'inappropriate_blox' | 'spam' | 'other'>('inappropriate_level');
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -29,6 +30,7 @@ export function ReportDialog({ levelId, levelName, userId, onClose }: ReportDial
         levelId,
         levelName,
         userId: userId || 'anonymous',
+        type: reportType,
         reason: reason.trim(),
         createdAt: new Date().toISOString(),
       });
@@ -45,6 +47,17 @@ export function ReportDialog({ levelId, levelName, userId, onClose }: ReportDial
       <div className="bg-card border border-border rounded-md p-5 w-full max-w-md">
         <h2 className="font-pixel text-xs text-primary mb-2">Report Level</h2>
         <p className="font-pixel-body text-sm text-muted-foreground mb-3">{levelName}</p>
+        <label className="font-pixel-body text-xs text-muted-foreground mb-1 block">Report Type</label>
+        <select
+          className="w-full bg-input border border-border rounded p-2 font-pixel-body text-sm mb-3"
+          value={reportType}
+          onChange={(e) => setReportType(e.target.value as 'inappropriate_level' | 'inappropriate_blox' | 'spam' | 'other')}
+        >
+          <option value="inappropriate_level">Inappropriate Level</option>
+          <option value="inappropriate_blox">Inappropriate BLOX</option>
+          <option value="spam">Spam</option>
+          <option value="other">Other</option>
+        </select>
         <textarea
           className="w-full min-h-28 bg-input border border-border rounded p-2 font-pixel-body text-sm"
           placeholder="Why are you reporting this level?"

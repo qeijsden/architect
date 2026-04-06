@@ -1,0 +1,65 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build Web",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Build Always",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build:always"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Steam Export (Current OS)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"steam:export"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Steam Export (macOS)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"steam:export:mac"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Steam Export (Windows)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"steam:export:win"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

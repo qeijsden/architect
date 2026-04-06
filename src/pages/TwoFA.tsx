@@ -1,5 +1,4 @@
 import { useNavigate } from 'react-router-dom';
-import { useUser } from '@clerk/clerk-react';
 import { GameButton } from '@/components/ui/GameButton';
 import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft, Shield } from 'lucide-react';
@@ -7,7 +6,6 @@ import { ArrowLeft, Shield } from 'lucide-react';
 export default function TwoFA() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
-  const { user } = useUser();
 
   // Redirect if not authenticated
   if (!isAuthenticated) {
@@ -25,75 +23,40 @@ export default function TwoFA() {
       </div>
 
       <div className="w-full max-w-md relative z-10">
-        {/* Back button */}
-        <GameButton 
-          variant="ghost" 
-          size="sm" 
-          onClick={() => navigate(-1)}
-          className="mb-8"
-        >
+        <GameButton variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-8">
           <ArrowLeft size={16} className="mr-2" />
           Back
         </GameButton>
 
-        {/* Header */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
             <Shield size={48} className="text-primary" />
           </div>
           <h1 className="font-pixel text-2xl text-primary text-glow mb-4">SECURITY SETTINGS</h1>
           <p className="font-pixel-body text-muted-foreground text-lg">
-            Manage your account security
+            Account security is handled by Google
           </p>
         </div>
 
-        {/* Content */}
-        <div className="bg-card/50 p-6 pixel-border space-y-6">
-          {/* Clerk 2FA Info */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-3 p-4 bg-success/10 border-2 border-success/30 pixel-border">
-              <div className="w-3 h-3 bg-success" />
-              <span className="font-pixel text-sm text-success">Security: Managed by Clerk</span>
-            </div>
-
-            <p className="font-pixel-body text-muted-foreground text-sm">
-              Two-factor authentication and security settings are managed by Clerk. You can enable 2FA from your Clerk dashboard or account management page.
-            </p>
-
-            <GameButton 
-              variant="primary" 
-              size="lg" 
-              className="w-full"
-              onClick={() => window.open('https://clerk.com', '_blank')}
-            >
-              Visit Clerk Dashboard
-            </GameButton>
-
-            <GameButton 
-              variant="secondary" 
-              size="lg" 
-              className="w-full"
-              onClick={() => {
-                if (user) {
-                  user.getSessions().then(sessions => {
-                    console.log('Active sessions:', sessions);
-                  });
-                }
-              }}
-            >
-              Manage Account
-            </GameButton>
+        <div className="bg-card/50 p-6 pixel-border space-y-4">
+          <div className="flex items-center gap-3 p-4 bg-success/10 border-2 border-success/30 pixel-border">
+            <div className="w-3 h-3 bg-success" />
+            <span className="font-pixel text-sm text-success">Security: Google Account</span>
           </div>
-        </div>
-
-        {/* Info box */}
-        <div className="mt-6 p-4 bg-card/30 border-2 border-border pixel-border">
-          <h3 className="font-pixel text-xs text-primary mb-2">2FA WITH CLERK</h3>
-          <p className="font-pixel-body text-xs text-muted-foreground">
-            Clerk automatically handles 2FA, password resets, account recovery, and device management. No additional setup needed!
+          <p className="font-pixel-body text-muted-foreground text-sm">
+            Two-factor authentication, password management, and device security are all handled by your Google account. Visit myaccount.google.com to manage them.
           </p>
+          <GameButton
+            variant="primary"
+            size="lg"
+            className="w-full"
+            onClick={() => window.open('https://myaccount.google.com/security', '_blank')}
+          >
+            Open Google Security
+          </GameButton>
         </div>
       </div>
     </div>
   );
 }
+

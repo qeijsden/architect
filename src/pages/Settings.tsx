@@ -1,53 +1,30 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GameButton } from '@/components/ui/GameButton';
-import { ArrowLeft, Volume2, VolumeX, Zap, RotateCcw } from 'lucide-react';
-import { toast } from 'sonner';
-
-const SETTINGS_KEY = 'game_settings';
-
-interface GameSettings {
-  masterVolume: number; // 0-1
-  soundVolume: number; // 0-1
-  musicVolume: number; // 0-1
-  cameraSpeed: number; // 0.01-0.3
-  particlesEnabled: boolean;
-  renderDistance: number; // 50-500 pixels
-}
-
-const DEFAULT_SETTINGS: GameSettings = {
-  masterVolume: 1.0,
-  soundVolume: 1.0,
-  musicVolume: 0.7,
-  cameraSpeed: 0.1,
-  particlesEnabled: true,
-  renderDistance: 200,
-};
+import { ArrowLeft, Eye, Volume2, Zap, RotateCcw } from 'lucide-react';
+import { toast } from '@/lib/announcer';
+import { DEFAULT_SETTINGS, GameSettings, SETTINGS_KEY, getMissingGameSettingKeys, getStoredGameSettings, mergeGameSettings, resetGameSettings, saveGameSettings } from '@/lib/gameSettings';
 
 export default function Settings() {
   const navigate = useNavigate();
   const [settings, setSettings] = useState<GameSettings>(DEFAULT_SETTINGS);
   const [isDirty, setIsDirty] = useState(false);
+  const [missingKeys, setMissingKeys] = useState<Array<keyof GameSettings>>([]);
 
   // Load settings from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem(SETTINGS_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setSettings({ ...DEFAULT_SETTINGS, ...parsed });
-      } catch (error) {
-        console.error('Failed to load settings:', error);
-      }
-    }
+    const stored = getStoredGameSettings();
+    setSettings(mergeGameSettings(stored));
+    setMissingKeys(getMissingGameSettingKeys(stored));
   }, []);
 
   // Auto-save settings whenever they change (debounced)
   useEffect(() => {
     const timer = setTimeout(() => {
       if (isDirty) {
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+        saveGameSettings(settings);
         setIsDirty(false);
+        setMissingKeys([]);
         toast.success('Settings saved', { duration: 2000 });
       }
     }, 1000); // Wait 1 second after last change before saving
@@ -65,10 +42,13 @@ export default function Settings() {
 
   const handleResetToDefaults = () => {
     setSettings(DEFAULT_SETTINGS);
-    localStorage.removeItem(SETTINGS_KEY);
+    resetGameSettings();
     setIsDirty(false);
+    setMissingKeys([]);
     toast.success('Settings reset to defaults');
   };
+
+  const hasMissingSettings = useMemo(() => missingKeys.length > 0, [missingKeys]);
 
   return (
     <div className="min-h-screen bg-background p-4">
@@ -90,6 +70,15 @@ export default function Settings() {
 
         {/* Settings Panels */}
         <div className="space-y-6">
+          {hasMissingSettings && (
+            <div className="bg-accent/10 p-4 pixel-border border border-accent/40">
+              <h2 className="font-pixel text-xs text-accent mb-2">Settings need review</h2>
+              <p className="font-pixel-body text-sm text-muted-foreground">
+                New or unset settings were found. Adjust them here, or keep the defaults and they will save automatically.
+              </p>
+            </div>
+          )}
+
           {/* Audio Settings */}
           <div className="bg-card/50 p-6 pixel-border">
             <div className="flex items-center gap-2 mb-4">
@@ -148,31 +137,51 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* Gameplay Settings */}
+          {/* Visual Settings */}
           <div className="bg-card/50 p-6 pixel-border">
             <div className="flex items-center gap-2 mb-4">
-              <Zap size={16} className="text-accent" />
-              <h2 className="font-pixel text-sm text-foreground">Gameplay Settings</h2>
+              <Eye size={16} className="text-accent" />
+              <h2 className="font-pixel text-sm text-foreground">Visual Settings</h2>
             </div>
 
             <div className="space-y-4">
-              {/* Camera Speed */}
               <div>
                 <label className="font-pixel-body text-sm text-foreground block mb-2">
-                  Camera Pan Speed: {(settings.cameraSpeed * 100).toFixed(0)}%
+                  Wind Opacity: {(settings.windOpacity * 100).toFixed(0)}%
                 </label>
                 <input
                   type="range"
-                  min="0.01"
-                  max="0.3"
+                  min="0.1"
+                  max="1"
                   step="0.01"
-                  value={settings.cameraSpeed}
-                  onChange={(e) => handleSettingChange('cameraSpeed', parseFloat(e.target.value))}
+                  value={settings.windOpacity}
+                  onChange={(e) => handleSettingChange('windOpacity', parseFloat(e.target.value))}
                   className="w-full h-2 bg-background border border-border rounded cursor-pointer"
                 />
                 <p className="font-pixel-body text-xs text-muted-foreground mt-1">
-                  Lower = slower panning, better for precision. Higher = faster panning, better for exploration.
+                  Wind blocks render at 50% opacity by default. This value also drives ghost-block transparency if you enable the option below.
                 </p>
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <label className="font-pixel-body text-sm text-foreground block">
+                    Ghost blocks use wind opacity
+                  </label>
+                  <p className="font-pixel-body text-xs text-muted-foreground mt-1">
+                    Applies the same transparency to ghost blocks such as ghost spawns.
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleSettingChange('ghostBlocksUseWindOpacity', !settings.ghostBlocksUseWindOpacity)}
+                  className={`px-4 py-2 font-pixel text-xs border-2 transition-colors ${
+                    settings.ghostBlocksUseWindOpacity
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background border-border text-foreground'
+                  }`}
+                >
+                  {settings.ghostBlocksUseWindOpacity ? 'Enabled' : 'Disabled'}
+                </button>
               </div>
             </div>
           </div>

@@ -1,9 +1,24 @@
 import { useState, useCallback, useEffect } from 'react';
-import { LeaderboardEntry } from '@/types/game';
+import { LeaderboardEntry, LevelMode } from '@/types/game';
 
 const LEADERBOARD_PREFIX = 'leaderboard_';
 
-export function useLeaderboard(levelId: string) {
+const isEntryForMode = (entry: LeaderboardEntry, mode: LevelMode) => {
+  if (mode === 'survival') return entry.mode === 'survival';
+  return entry.mode !== 'survival';
+};
+
+const compareEntries = (mode: LevelMode) => (a: LeaderboardEntry, b: LeaderboardEntry) => {
+  if (mode === 'survival') {
+    if (b.time_seconds !== a.time_seconds) return b.time_seconds - a.time_seconds;
+    return a.deaths - b.deaths;
+  }
+
+  if (a.time_seconds !== b.time_seconds) return a.time_seconds - b.time_seconds;
+  return a.deaths - b.deaths;
+};
+
+export function useLeaderboard(levelId: string, mode: LevelMode = 'race') {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [userRank, setUserRank] = useState<number | null>(null);
@@ -11,7 +26,7 @@ export function useLeaderboard(levelId: string) {
   // Load leaderboard on mount
   useEffect(() => {
     fetchLeaderboard(10);
-  }, [levelId]);
+  }, [levelId, mode]);
 
   const fetchLeaderboard = useCallback(async (limit: number = 10) => {
     setLoading(true);
@@ -21,8 +36,10 @@ export function useLeaderboard(levelId: string) {
       const stored = localStorage.getItem(key);
       const leaderboard: LeaderboardEntry[] = stored ? JSON.parse(stored) : [];
 
-      // Sort by time (ascending) and limit
-      const sorted = leaderboard.sort((a, b) => a.time_seconds - b.time_seconds).slice(0, limit);
+      const sorted = leaderboard
+        .filter((entry) => isEntryForMode(entry, mode))
+        .sort(compareEntries(mode))
+        .slice(0, limit);
       setEntries(sorted);
 
       return sorted;
@@ -32,14 +49,15 @@ export function useLeaderboard(levelId: string) {
     } finally {
       setLoading(false);
     }
-  }, [levelId]);
+  }, [levelId, mode]);
 
   const submitScore = useCallback(
     async (
       userId: string,
       playerName: string,
       timeSeconds: number,
-      deaths: number
+      deaths: number,
+      entryMode: LevelMode = mode,
     ) => {
       try {
         const key = LEADERBOARD_PREFIX + levelId;
@@ -47,15 +65,22 @@ export function useLeaderboard(levelId: string) {
         const leaderboard: LeaderboardEntry[] = stored ? JSON.parse(stored) : [];
 
         // Check if user already has a score
-        const existingIndex = leaderboard.findIndex(e => e.user_id === userId);
+        const existingIndex = leaderboard.findIndex((entry) => entry.user_id === userId && isEntryForMode(entry, entryMode));
 
         if (existingIndex >= 0) {
-          // Only update if new time is better
-          if (timeSeconds < leaderboard[existingIndex].time_seconds) {
+          const existing = leaderboard[existingIndex];
+          const isBetter = entryMode === 'survival'
+            ? timeSeconds > existing.time_seconds || (timeSeconds === existing.time_seconds && deaths < existing.deaths)
+            : timeSeconds < existing.time_seconds || (timeSeconds === existing.time_seconds && deaths < existing.deaths);
+
+          if (isBetter) {
             leaderboard[existingIndex] = {
-              ...leaderboard[existingIndex],
+              ...existing,
               time_seconds: timeSeconds,
               deaths,
+              mode: entryMode,
+              created_at: existing.created_at,
+              updated_at: new Date().toISOString(),
             };
           }
         } else {
@@ -67,6 +92,7 @@ export function useLeaderboard(levelId: string) {
             player_name: playerName,
             time_seconds: timeSeconds,
             deaths,
+            mode: entryMode,
             is_multiplayer: false, // Single-player entries only - multiplayer disabled from leaderboards
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -79,7 +105,7 @@ export function useLeaderboard(levelId: string) {
         console.error('Failed to submit score:', error);
       }
     },
-    [levelId, fetchLeaderboard]
+    [levelId, fetchLeaderboard, mode]
   );
 
   const getUserRank = useCallback(
@@ -89,8 +115,7 @@ export function useLeaderboard(levelId: string) {
         const stored = localStorage.getItem(key);
         const leaderboard: LeaderboardEntry[] = stored ? JSON.parse(stored) : [];
 
-        // Sort by time and find rank
-        const sorted = leaderboard.sort((a, b) => a.time_seconds - b.time_seconds);
+        const sorted = leaderboard.filter((entry) => isEntryForMode(entry, mode)).sort(compareEntries(mode));
         const rank = sorted.findIndex(e => e.user_id === userId) + 1;
 
         setUserRank(rank > 0 ? rank : null);
@@ -100,7 +125,7 @@ export function useLeaderboard(levelId: string) {
         return null;
       }
     },
-    [levelId]
+    [levelId, mode]
   );
 
   return {

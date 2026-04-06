@@ -4,7 +4,7 @@
   "ContentRoot" ".."
   "FileMapping"
   {
-    "LocalPath" "src-tauri/target/release/bundle/nsis/*"
+    "LocalPath" "src-tauri/target/release/steam-windows/*"
     "DepotPath" "."
     "recursive" "1"
   }

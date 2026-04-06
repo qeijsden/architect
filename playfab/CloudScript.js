@@ -90,6 +90,8 @@ handlers.PublishFeatureRequest = function (args, context) {
     var description = (args && args.Description) ? args.Description : '';
     var userId = (args && args.UserId) ? args.UserId : null;
     var userName = (args && args.UserName) ? args.UserName : 'Anonymous';
+    var bloxName = (args && args.BloxName) ? args.BloxName : null;
+    var bloxContent = (args && args.BloxContent) ? args.BloxContent : null;
 
     if (!title) {
       return { success: false, error: 'Title is required' };
@@ -115,7 +117,11 @@ handlers.PublishFeatureRequest = function (args, context) {
       description: description,
       user_id: userId,
       user_name: userName,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      blox: bloxName || bloxContent ? {
+        name: bloxName,
+        content: bloxContent
+      } : null
     };
 
     requests.push(newRequest);
@@ -292,5 +298,84 @@ handlers.IncrementLevelCompletions = function (args, context) {
   } catch (error) {
     log.error("IncrementLevelCompletions error: " + error);
     return { success: false, error: error.toString() };
+  }
+};
+
+/**
+ * Publish/update a ghost run for a level.
+ */
+handlers.PublishGhostRun = function (args, context) {
+  try {
+    var run = args && args.Run;
+    if (!run || !run.levelId || !run.userId || !run.path || run.path.length < 2) {
+      return { success: false, error: 'Invalid ghost run payload' };
+    }
+
+    var key = 'GhostRuns_' + run.levelId;
+    var titleDataResult = server.GetTitleData({ Keys: [key] });
+    var runs = [];
+
+    if (titleDataResult.Data && titleDataResult.Data[key]) {
+      try {
+        runs = JSON.parse(titleDataResult.Data[key]);
+      } catch (e) {
+        runs = [];
+      }
+    }
+
+    runs = runs.filter(function (r) {
+      return r && r.userId !== run.userId;
+    });
+    runs.push(run);
+
+    runs.sort(function (a, b) {
+      return (a.durationMs || 999999999) - (b.durationMs || 999999999);
+    });
+
+    if (runs.length > 120) {
+      runs = runs.slice(0, 120);
+    }
+
+    server.SetTitleData({
+      Key: key,
+      Value: JSON.stringify(runs),
+    });
+
+    return { success: true, runs: runs, count: runs.length };
+  } catch (error) {
+    log.error('PublishGhostRun error: ' + error);
+    return { success: false, error: error.toString() };
+  }
+};
+
+/**
+ * Fetch ghost runs for a level.
+ */
+handlers.GetLevelGhostRuns = function (args, context) {
+  try {
+    var levelId = args && args.LevelId;
+    if (!levelId) {
+      return { success: false, error: 'LevelId required', runs: [] };
+    }
+
+    var key = 'GhostRuns_' + levelId;
+    var titleDataResult = server.GetTitleData({ Keys: [key] });
+    if (titleDataResult.Data && titleDataResult.Data[key]) {
+      var runs = JSON.parse(titleDataResult.Data[key]);
+      if (!runs || !runs.length) {
+        return { success: true, runs: [] };
+      }
+
+      runs.sort(function (a, b) {
+        return (a.durationMs || 999999999) - (b.durationMs || 999999999);
+      });
+
+      return { success: true, runs: runs.slice(0, 120) };
+    }
+
+    return { success: true, runs: [] };
+  } catch (error) {
+    log.error('GetLevelGhostRuns error: ' + error);
+    return { success: false, error: error.toString(), runs: [] };
   }
 };

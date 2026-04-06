@@ -1,9 +1,11 @@
-import type { ReactElement, ReactNode } from "react";
+import type { ReactElement, ReactNode } from 'react';
 
 export type ToastActionElement = ReactElement;
 
 export type ToastProps = {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   title?: ReactNode;
-  description?: ReactNo  description?: ReactNo  description?: ReactNo  description?: ReactNo  description?: ReactNo  desEOF  description?: ReactNo  description?: ReactNo  description?: ReactNo  description?: Reace/Lev  description?: ReactNo  description?: ReactNo  description?: ReactNo  description?: Rea null  description?: ReactNo  description?: ReactNo  description?: ReactNo  description?: ReactNo  description?: ReactNo  desEOF  description?: ReactNo  description?: ReactNo  description?: Rea<'E  description?: ReactNo  description?: ReactNo  description?: ReactNo  description?: ReactNo  description?: ReactNo  desEOF  description?: ReactNo  description?: ReactNo  description?: ReactNo  description?: Reace/Lev  description?: ReactNo  description?: ReactNo  description?: ReactNo  description?: Rea null  description?: Rnknown>) {
-  return null;
-}
+  description?: ReactNode;
+  action?: ToastActionElement;
+};

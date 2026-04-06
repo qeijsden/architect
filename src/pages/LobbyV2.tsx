@@ -7,7 +7,7 @@ import { useOnlineMultiplayer } from '@/hooks/useOnlineMultiplayer';
 import { Level, GameSession, SessionPlayer } from '@/types/game';
 import { RoomPlayer } from '@/integrations/playfab/client';
 import { ArrowLeft, Users, Play, Copy, Check, RefreshCw, Crown, Wifi, WifiOff, Globe } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/announcer';
 
 // Type guards
 function isRoomPlayer(player: SessionPlayer | RoomPlayer): player is RoomPlayer {

@@ -9,7 +9,7 @@ import { GameButton } from '@/components/ui/GameButton';
 import { useGamePhysics } from '@/hooks/useGamePhysics';
 import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft, Play, Square, Save, Trash2, Users, LogOut, Copy, Check, Grid3x3 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/announcer';
 
 const GRID_SIZE = 32;
 const CANVAS_WIDTH = 1440;

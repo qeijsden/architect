@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useLocalMultiplayer } from '@/hooks/useLocalMultiplayer';
 import { Level, GameSession } from '@/types/game';
 import { ArrowLeft, Users, Play, Copy, Check, RefreshCw, Crown } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/announcer';
 
 const PLAYER_COLORS = [
   '#26c6da', '#e53935', '#43a047', '#ffb300', 

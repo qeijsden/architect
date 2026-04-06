@@ -54,6 +54,39 @@ fn is_steam_launch_context() -> bool {
   steam_env_matches_app_id() || parent_process_looks_like_steam()
 }
 
+fn steam_env_identity() -> Option<SteamIdentity> {
+  if !is_steam_launch_context() {
+    return None;
+  }
+
+  let steam_id = ["SteamUser", "SteamID", "SteamAppUser"]
+    .iter()
+    .find_map(|key| std::env::var(key).ok())
+    .filter(|v| !v.trim().is_empty())
+    .unwrap_or_else(|| "steam_user".to_string());
+
+  let persona_name = ["SteamPersonaName", "SteamAppUser", "SteamUser"]
+    .iter()
+    .find_map(|key| std::env::var(key).ok())
+    .filter(|v| !v.trim().is_empty())
+    .unwrap_or_else(|| "Steam Player".to_string());
+
+  Some(SteamIdentity {
+    steam_id,
+    persona_name,
+    is_running_in_steam: true,
+  })
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn steam_identity() -> Option<SteamIdentity> {
+  // On macOS, avoid Steam API init here to prevent null-call crashes seen in
+  // Steam launch environments; rely on env/context identity instead.
+  steam_env_identity()
+}
+
+#[cfg(not(target_os = "macos"))]
 #[tauri::command]
 fn steam_identity() -> Option<SteamIdentity> {
   if !is_steam_launch_context() {
@@ -80,7 +113,7 @@ fn steam_identity() -> Option<SteamIdentity> {
         is_running_in_steam: true,
       })
     }
-    Err(_) => None,
+    Err(_) => steam_env_identity(),
   }
 }
 

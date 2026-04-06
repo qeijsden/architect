@@ -62,9 +62,9 @@ gh run watch "$RUN_ID" --exit-status
 
 # ── Download Windows artifact ─────────────────────────────
 echo ""
-echo "[4/4] Downloading Windows NSIS artifact..."
-mkdir -p src-tauri/target/release/bundle/nsis
-gh run download "$RUN_ID" --name windows-nsis --dir src-tauri/target/release/bundle/nsis
+echo "[4/4] Downloading Windows Steam payload..."
+mkdir -p src-tauri/target/release/steam-windows
+gh run download "$RUN_ID" --name windows-steam --dir src-tauri/target/release/steam-windows
 
 echo ""
 echo "Done. Both platforms are ready."

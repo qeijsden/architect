@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GameButton } from '@/components/ui/GameButton';
 import { useAuth } from '@/hooks/useAuth';
-import { toast } from 'sonner';
-import { ArrowLeft, User, Palette, Mail, LogOut } from 'lucide-react';
+import { toast } from '@/lib/announcer';
+import { ArrowLeft, User, Palette, Mail, Pencil, Eraser, Trash2 } from 'lucide-react';
 
 const AVATAR_COLORS = [
   '#26c6da', // Cyan
@@ -26,15 +26,98 @@ export default function Profile() {
 
   const [displayName, setDisplayName] = useState('');
   const [selectedColor, setSelectedColor] = useState('#26c6da');
-  const [bio, setBio] = useState('');
+  const [avatarPixels, setAvatarPixels] = useState<string[]>(() => new Array(32 * 32).fill('transparent'));
+  const [avatarTool, setAvatarTool] = useState<'draw' | 'erase'>('draw');
   const [saveLoading, setSaveLoading] = useState(false);
   const [saved, setSaved] = useState(false);
+  const avatarCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isDrawingRef = useRef(false);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
       navigate('/auth');
     }
   }, [loading, isAuthenticated, navigate]);
+
+  const effectiveProfile = useMemo(() => {
+    if (profile) {
+      return profile;
+    }
+
+    if (!isAuthenticated) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const identity = user?.id || steamIdentity?.steamId || 'local-player';
+    return {
+      id: identity,
+      user_id: identity,
+      playfab_id: identity,
+      display_name: user?.name || steamIdentity?.personaName || 'Player',
+      avatar_color: '#26c6da',
+      created_at: now,
+      updated_at: now,
+      provider: steamMode ? 'steam' : 'local',
+      provider_id: steamIdentity?.steamId || identity,
+    };
+  }, [isAuthenticated, profile, steamIdentity, steamMode, user]);
+
+  // Initialize form with profile data
+  useEffect(() => {
+    if (effectiveProfile) {
+      setDisplayName(effectiveProfile.display_name || '');
+      setSelectedColor(effectiveProfile.avatar_color || '#26c6da');
+      if (Array.isArray(effectiveProfile.avatar_pixels) && effectiveProfile.avatar_pixels.length === 32 * 32) {
+        setAvatarPixels(effectiveProfile.avatar_pixels);
+      } else {
+        setAvatarPixels(new Array(32 * 32).fill('transparent'));
+      }
+    } else if (!loading) {
+      setDisplayName('');
+      setSelectedColor('#26c6da');
+      setAvatarPixels(new Array(32 * 32).fill('transparent'));
+    }
+  }, [effectiveProfile, loading]);
+
+  useEffect(() => {
+    const drawToCanvas = (canvas: HTMLCanvasElement | null, pixelSize: number) => {
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const size = 32;
+      canvas.width = size * pixelSize;
+      canvas.height = size * pixelSize;
+
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const color = avatarPixels[y * size + x];
+          if (!color || color === 'transparent') continue;
+          ctx.fillStyle = color;
+          ctx.fillRect(x * pixelSize, y * pixelSize, pixelSize, pixelSize);
+        }
+      }
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      for (let i = 0; i <= size; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * pixelSize, 0);
+        ctx.lineTo(i * pixelSize, size * pixelSize);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, i * pixelSize);
+        ctx.lineTo(size * pixelSize, i * pixelSize);
+        ctx.stroke();
+      }
+    };
+
+    drawToCanvas(avatarCanvasRef.current, 8);
+    drawToCanvas(previewCanvasRef.current, 3);
+  }, [avatarPixels]);
 
   // Show loading state while checking authentication
   if (loading) {
@@ -48,48 +131,31 @@ export default function Profile() {
     );
   }
 
-  // Show error if authenticated but no profile and not loading
-  if (isAuthenticated && !profile && !loading) {
-    return (
-      <div className="w-screen h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-4 px-4">
-          <p className="font-pixel text-lg text-yellow-400">Profile data unavailable</p>
-          <p className="font-pixel-body text-sm text-muted-foreground">Using defaults</p>
-          <GameButton 
-            variant="ghost" 
-            onClick={() => navigate('/')}
-          >
-            Go Home
-          </GameButton>
-        </div>
-      </div>
-    );
-  }
-
   if (!isAuthenticated && !loading) {
     return (
       <div className="w-screen h-screen bg-background flex items-center justify-center">
         <div className="text-center space-y-4 px-4">
-          <p className="font-pixel text-lg text-muted-foreground">Redirecting to sign in...</p>
+          <p className="font-pixel text-lg text-muted-foreground">Redirecting to account creation...</p>
           <GameButton variant="ghost" onClick={() => navigate('/auth')}>
-            Go to Sign In
+            Go to Create Account
           </GameButton>
         </div>
       </div>
     );
   }
 
-  // Initialize form with profile data
-  useEffect(() => {
-    if (profile) {
-      setDisplayName(profile.display_name || '');
-      setSelectedColor(profile.avatar_color || '#26c6da');
-    } else if (!loading) {
-      // Set defaults if no profile loaded but loading is done
-      setDisplayName('');
-      setSelectedColor('#26c6da');
-    }
-  }, [profile, loading]);
+  const drawAvatarPixel = (clientX: number, clientY: number) => {
+    const canvas = avatarCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const px = Math.floor((clientX - rect.left) / 8);
+    const py = Math.floor((clientY - rect.top) / 8);
+    if (px < 0 || px >= 32 || py < 0 || py >= 32) return;
+
+    const next = [...avatarPixels];
+    next[py * 32 + px] = avatarTool === 'draw' ? selectedColor : 'transparent';
+    setAvatarPixels(next);
+  };
 
   const handleSaveProfile = async () => {
     if (!displayName.trim()) {
@@ -102,6 +168,7 @@ export default function Profile() {
       const result = await updateProfile({
         display_name: displayName.trim(),
         avatar_color: selectedColor,
+        avatar_pixels: avatarPixels,
       });
       
       if (result.success) {
@@ -166,17 +233,56 @@ export default function Profile() {
           {/* Avatar Preview */}
           <div className="flex flex-col items-center gap-4">
             <div className="flex items-center justify-center">
-              <div
-                className="w-20 h-20 pixel-border border-4 flex items-center justify-center text-3xl font-pixel"
-                style={{ backgroundColor: selectedColor }}
-              >
-                {displayName.charAt(0).toUpperCase() || '?'}
-              </div>
+              <canvas
+                ref={previewCanvasRef}
+                className="pixel-border border-4"
+                style={{ imageRendering: 'pixelated' }}
+              />
             </div>
             <div className="text-center">
               <p className="font-pixel text-sm text-muted-foreground">PREVIEW</p>
               <p className="font-pixel-body text-foreground">{displayName || 'Player'}</p>
             </div>
+          </div>
+
+          {/* Avatar BLOX Editor */}
+          <div>
+            <label className="font-pixel text-xs text-muted-foreground mb-2 block">AVATAR BLOX (32x32)</label>
+            <div className="flex items-center gap-2 mb-2">
+              <GameButton size="sm" variant={avatarTool === 'draw' ? 'primary' : 'outline'} onClick={() => setAvatarTool('draw')}>
+                <Pencil size={12} className="mr-1" /> Draw
+              </GameButton>
+              <GameButton size="sm" variant={avatarTool === 'erase' ? 'primary' : 'outline'} onClick={() => setAvatarTool('erase')}>
+                <Eraser size={12} className="mr-1" /> Erase
+              </GameButton>
+              <GameButton
+                size="sm"
+                variant="outline"
+                onClick={() => setAvatarPixels(new Array(32 * 32).fill('transparent'))}
+              >
+                <Trash2 size={12} className="mr-1" /> Clear
+              </GameButton>
+            </div>
+            <canvas
+              ref={avatarCanvasRef}
+              className="w-full max-w-[256px] pixel-border border-2 cursor-crosshair"
+              style={{ imageRendering: 'pixelated' }}
+              onMouseDown={(e) => {
+                isDrawingRef.current = true;
+                drawAvatarPixel(e.clientX, e.clientY);
+              }}
+              onMouseMove={(e) => {
+                if (!isDrawingRef.current) return;
+                drawAvatarPixel(e.clientX, e.clientY);
+              }}
+              onMouseUp={() => {
+                isDrawingRef.current = false;
+              }}
+              onMouseLeave={() => {
+                isDrawingRef.current = false;
+              }}
+            />
+            <p className="font-pixel-body text-xs text-muted-foreground mt-2">This 32x32 BLOX avatar is used in-game for your player.</p>
           </div>
 
           {/* Display Name */}
@@ -234,18 +340,18 @@ export default function Profile() {
           )}
 
           {/* Stats */}
-          {profile && (
+          {effectiveProfile && (
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 bg-primary/10 border-2 border-primary/30 pixel-border">
                 <p className="font-pixel text-xs text-primary mb-1">JOINED</p>
                 <p className="font-pixel-body text-sm text-foreground">
-                  {new Date(profile.created_at).toLocaleDateString()}
+                  {new Date(effectiveProfile.created_at).toLocaleDateString()}
                 </p>
               </div>
               <div className="p-3 bg-accent/10 border-2 border-accent/30 pixel-border">
                 <p className="font-pixel text-xs text-accent mb-1">PROVIDER</p>
                 <p className="font-pixel-body text-sm text-foreground capitalize">
-                  {profile.provider || 'Email'}
+                  {effectiveProfile.provider || 'Local'}
                 </p>
               </div>
             </div>

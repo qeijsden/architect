@@ -1,11 +1,10 @@
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TopBarAnnouncer } from "@/components/ui/TopBarAnnouncer";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { ClerkProvider } from "@clerk/clerk-react";
+import { BrowserRouter, HashRouter, Routes, Route } from "react-router-dom";
 import Home from "./pages/Home";
 import Editor from "./pages/Editor";
+import LevelModeSelect from "./pages/LevelModeSelect";
 import Browse from "./pages/Browse";
 import Play from "./pages/Play";
 import PlayMultiplayer from "./pages/PlayMultiplayer";
@@ -24,12 +23,11 @@ import Profile from "./pages/Profile";
 import OAuthCallback from "./pages/OAuthCallback";
 import NotFound from "./pages/NotFound";
 import { useDiscordPresence } from "@/hooks/useDiscordPresence";
+import { SettingsReviewDialog } from "@/components/game/SettingsReviewDialog";
 import { StartupWarningDialog } from "@/components/game/StartupWarningDialog";
 
 const queryClient = new QueryClient();
-
-// Clerk publishable key
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+const Router = import.meta.env.PROD ? HashRouter : BrowserRouter;
 
 // Inner component to use hooks
 function AppContent() {
@@ -37,13 +35,14 @@ function AppContent() {
 
   return (
     <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
+      <TopBarAnnouncer />
+      <Router>
         <StartupWarningDialog />
+        <SettingsReviewDialog />
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/editor" element={<Editor />} />
+          <Route path="/create-mode" element={<LevelModeSelect />} />
           <Route path="/editor-lobby" element={<EditorLobby />} />
           <Route path="/editor-multiplayer" element={<EditorMultiplayer />} />
           <Route path="/browse" element={<Browse />} />
@@ -62,18 +61,16 @@ function AppContent() {
           <Route path="/blox-editor" element={<BLOXEditor />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
-      </BrowserRouter>
+      </Router>
     </TooltipProvider>
   );
 }
 
 const App = () => {
   return (
-    <ClerkProvider publishableKey={clerkPubKey}>
-      <QueryClientProvider client={queryClient}>
-        <AppContent />
-      </QueryClientProvider>
-    </ClerkProvider>
+    <QueryClientProvider client={queryClient}>
+      <AppContent />
+    </QueryClientProvider>
   );
 };
 

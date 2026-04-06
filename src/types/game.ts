@@ -20,7 +20,16 @@ export type BlockType =
   | 'directional_impact'
   | 'push_block'
   | 'water'
-  | 'air_jump';
+  | 'air_jump'
+  | 'pulse_hazard'
+  | 'phase_platform'
+  | 'timer_orb'
+  | 'zone'
+  | 'custom';
+
+export type LevelMode = 'race' | 'survival';
+
+export type CustomBehaviorType = Exclude<BlockType, 'custom'>;
 
 export interface Block {
   id: string;
@@ -29,6 +38,8 @@ export interface Block {
   y: number;
   width: number;
   height: number;
+  customBlockId?: string;
+  customBehaviorTypes?: CustomBehaviorType[];
   // Original position (for rotating blocks)
   originalX?: number;
   originalY?: number;
@@ -75,6 +86,7 @@ export interface Block {
   // Wind block
   windForce?: number; // Push force (0.1 to 2)
   windDirection?: 'left' | 'right' | 'up' | 'down';
+  windAngle?: number; // Direction in degrees, 0 = right
   // Directional impact (knockback instead of death)
   knockbackForce?: number;
   knockbackDirection?: 'left' | 'right' | 'up' | 'down';
@@ -90,10 +102,31 @@ export interface Block {
   // Ice slope - makes ice behave like a ramp
   isSlopeIce?: boolean;
   iceSlope?: 'left' | 'right'; // Direction of slope on ice
+  // Ice sledding cap
+  capSledding?: boolean; // Capped Sledding — limits max slide speed when true
+  maxSlideSpeed?: number; // Max horizontal speed on ice (only used when capSledding=true)
+  // Survival blocks
+  pulseInterval?: number; // Full cycle duration in ms
+  pulseActiveDuration?: number; // Active slice of the cycle in ms
+  phaseInterval?: number; // Full cycle duration in ms
+  phaseActiveDuration?: number; // Solid slice of the cycle in ms
+  timerBonusSeconds?: number; // Time added when collected
+  collected?: boolean; // Runtime-only pickup state
+}
+
+export interface CustomBlockDefinition {
+  id: string;
+  name: string;
+  sprite: PixelData;
+  behaviorTypes: CustomBehaviorType[];
+  settings: BlockSettings;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Block settings interface for editor
 export interface BlockSettings {
+  customBehaviorTypes: CustomBehaviorType[];
   // Conveyor
   conveyorDirection: 'left' | 'right';
   conveyorSpeed: number;
@@ -129,6 +162,7 @@ export interface BlockSettings {
   // Wind
   windForce: number;
   windDirection: 'left' | 'right' | 'up' | 'down';
+  windAngle: number;
   // Directional impact
   knockbackForce: number;
   knockbackDirection: 'left' | 'right' | 'up' | 'down';
@@ -141,9 +175,19 @@ export interface BlockSettings {
   wallJumpPower: number;
   // Ice ramp
   iceSlope?: 'left' | 'right';
+  // Ice sledding cap
+  iceCappedSledding: boolean;
+  iceMaxSlideSpeed: number;
+  // Survival blocks
+  pulseInterval: number;
+  pulseActiveDuration: number;
+  phaseInterval: number;
+  phaseActiveDuration: number;
+  timerBonusSeconds: number;
 }
 
 export const DEFAULT_BLOCK_SETTINGS: BlockSettings = {
+  customBehaviorTypes: ['platform'],
   conveyorDirection: 'right',
   conveyorSpeed: 3,
   rotationSpeed: 2,
@@ -166,6 +210,7 @@ export const DEFAULT_BLOCK_SETTINGS: BlockSettings = {
   cannonInterval: 2000,
   windForce: 0.8,
   windDirection: 'right',
+  windAngle: 0,
   knockbackForce: 15,
   knockbackDirection: 'up',
   pushBlockShape: 'square',
@@ -173,7 +218,13 @@ export const DEFAULT_BLOCK_SETTINGS: BlockSettings = {
   waterDensity: 1.2,
   wallJumpPower: 1.5,
   iceSlope: undefined,
-
+  iceCappedSledding: false,
+  iceMaxSlideSpeed: 16,
+  pulseInterval: 2000,
+  pulseActiveDuration: 1200,
+  phaseInterval: 2200,
+  phaseActiveDuration: 1400,
+  timerBonusSeconds: 5,
 };
 
 export interface Level {
@@ -186,13 +237,21 @@ export interface Level {
   plays: number;
   likes: number;
   createdAt: Date;
+  mode?: LevelMode;
   seed?: string;
   max_time_seconds?: number;
+  survival_time_seconds?: number;
   completion_count?: number;
-  trackUrl?: string; // Custom music track URL
+  played_by?: string[]; // Unique player IDs who have played at least once
+  completed_by?: string[]; // Unique player IDs who have completed at least once
+  liked_by?: string[]; // Unique player IDs who liked/favorited the level
+  trackUrl?: string; // Level soundtrack link (Spotify, Apple Music, YouTube, or direct audio)
+  trackTitle?: string; // Optional user-facing song title
+  trackArtist?: string; // Optional user-facing song artist/creator
   allowImport?: boolean; // Allow other users to copy and modify
   gridSize?: number; // Grid size used in level (default 32), affects canvas dimensions
   texturePack?: TexturePack; // BLOX pixel art texture pack forced for this level
+  customBlocks?: CustomBlockDefinition[];
 }
 
 // BLOX Pixel Editor - Texture Pack System
@@ -242,6 +301,7 @@ export interface Player {
   vy: number;
   color: string;
   isGrounded: boolean;
+  onIce?: boolean;
   isDead: boolean;
   hasWon: boolean;
   lastCheckpoint?: { x: number; y: number };
@@ -307,6 +367,7 @@ export interface LeaderboardEntry {
   player_name: string;
   time_seconds: number;
   deaths: number;
+  mode?: LevelMode;
   created_at: string;
   is_multiplayer?: boolean; // False for single-player, True for multiplayer (multiplayer entries filtered from lbs)
 }
@@ -329,6 +390,7 @@ export interface Profile {
   playfab_id: string | null;
   display_name: string;
   avatar_color: string;
+  avatar_pixels?: string[]; // 32x32 (1024 pixels) custom avatar data
   created_at: string;
   updated_at: string;
   tutorial_completed?: boolean;

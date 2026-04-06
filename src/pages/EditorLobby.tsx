@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useFriends } from '@/hooks/useFriends';
 import { Profile } from '@/types/game';
 import { ArrowLeft, Users, Play, Copy, Check, Crown, UserPlus } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/announcer';
 
 const ARCHITECT_COLORS = [
   '#26c6da', '#e53935', '#43a047', '#ffb300'

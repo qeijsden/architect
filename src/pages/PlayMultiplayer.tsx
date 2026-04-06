@@ -4,6 +4,7 @@ import { Level, Player, Block, GameSession } from '@/types/game';
 import { GameRoom } from '@/integrations/playfab/client';
 import { GameCanvas } from '@/components/game/GameCanvas';
 import { GameButton } from '@/components/ui/GameButton';
+import { LevelMusicPlayer } from '@/components/game/LevelMusicPlayer';
 import { useGamePhysics } from '@/hooks/useGamePhysics';
 import { useLocalMultiplayer } from '@/hooks/useLocalMultiplayer';
 import { useOnlineMultiplayer } from '@/hooks/useOnlineMultiplayer';
@@ -11,7 +12,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useLevels } from '@/hooks/useLevels';
 import { useSoundEffects } from '@/hooks/useSoundEffects';
 import { ArrowLeft, RotateCcw, Heart, Clock, Users, Volume2, VolumeX } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/announcer';
+import { blockHasBehavior } from '@/lib/blockBehaviors';
 
 const CANVAS_WIDTH = 1920;
 const CANVAS_HEIGHT = 1080;
@@ -102,13 +104,13 @@ export default function PlayMultiplayer() {
   // Spawn position
   const spawnPosition = useMemo(() => {
     if (!level) return { x: 64, y: GROUND_Y - 96 };
-    const spawn = level.blocks.find(b => b.type === 'spawn');
+    const spawn = level.blocks.find((block) => blockHasBehavior(block, 'spawn'));
     return spawn ? { x: spawn.x, y: spawn.y - 32 } : { x: 64, y: GROUND_Y - 96 };
   }, [level]);
 
   const goalPosition = useMemo(() => {
     if (!level) return null;
-    const goal = level.blocks.find(b => b.type === 'goal');
+    const goal = level.blocks.find((block) => blockHasBehavior(block, 'goal'));
     return goal ? { x: goal.x, y: goal.y } : null;
   }, [level]);
 
@@ -425,6 +427,15 @@ export default function PlayMultiplayer() {
         </div>
       </div>
 
+      <LevelMusicPlayer
+        trackUrl={level.trackUrl}
+        trackTitle={level.trackTitle}
+        trackArtist={level.trackArtist}
+        enabled={soundEnabled}
+        autoplayExternalFallback
+        className="max-w-[960px]"
+      />
+
       {/* Connection status */}
       {!isConnected && (
         <div className="bg-destructive/20 border border-destructive px-4 py-2 mb-4">
@@ -448,6 +459,7 @@ export default function PlayMultiplayer() {
           playerProgress={playerProgress}
           cannonBalls={getCannonBalls()}
           texturePack={level?.texturePack}
+          customBlocks={level?.customBlocks}
         />
 
         {/* Win overlay */}

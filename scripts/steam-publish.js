@@ -14,7 +14,7 @@ if (missing.length) {
 }
 
 const hasMac = existsSync('src-tauri/target/release/bundle/macos/Architect.app');
-const hasWin = existsSync('src-tauri/target/release/bundle/nsis');
+const hasWin = existsSync('src-tauri/target/release/steam-windows');
 
 if (!hasMac && !hasWin) {
   console.error('No export artifacts found. Run steam:export:mac and steam:export:win first.');

@@ -10,19 +10,19 @@ interface GameButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> 
 }
 
 const variantClasses: Record<Variant, string> = {
-  primary: 'bg-primary text-primary-foreground hover:bg-primary/90',
-  secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/90',
-  accent: 'bg-accent text-accent-foreground hover:bg-accent/90',
-  success: 'bg-success text-success-foreground hover:bg-success/90',
-  destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+  primary: 'bg-primary text-primary-foreground border border-primary/70 hover:brightness-110',
+  secondary: 'bg-secondary text-secondary-foreground border border-secondary/70 hover:brightness-110',
+  accent: 'bg-accent text-accent-foreground border border-accent/70 hover:brightness-110',
+  success: 'bg-success text-success-foreground border border-success/70 hover:brightness-110',
+  destructive: 'bg-destructive text-destructive-foreground border border-destructive/70 hover:brightness-110',
   outline: 'bg-transparent text-foreground border border-border hover:bg-muted/60',
-  ghost: 'bg-transparent text-foreground hover:bg-muted/40',
+  ghost: 'bg-transparent text-foreground border border-transparent hover:bg-muted/40',
 };
 
 const sizeClasses: Record<Size, string> = {
-  sm: 'px-3 py-2 text-xs',
-  md: 'px-4 py-2.5 text-sm',
-  lg: 'px-6 py-3 text-base',
+  sm: 'px-3 py-1.5 text-xs',
+  md: 'px-4 py-2 text-sm',
+  lg: 'px-6 py-2.5 text-base',
 };
 
 export function GameButton({
@@ -36,7 +36,7 @@ export function GameButton({
     <button
       type={type}
       className={cn(
-        'font-pixel-body inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+        'font-pixel inline-flex items-center justify-center rounded-none transition-all duration-75 disabled:opacity-50 disabled:cursor-not-allowed shadow-[inset_-2px_-2px_0_rgba(0,0,0,0.35),inset_2px_2px_0_rgba(255,255,255,0.06)] active:translate-y-[1px] active:shadow-[inset_1px_1px_0_rgba(0,0,0,0.35)]',
         variantClasses[variant],
         sizeClasses[size],
         className,

@@ -2,16 +2,14 @@ import { useState } from 'react';
 import { GameButton } from '@/components/ui/GameButton';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { Hammer, LogIn, LogOut, MessageSquarePlus, FileText, Settings } from 'lucide-react';
+import { Hammer, LogIn, LogOut, MessageSquarePlus, Settings } from 'lucide-react';
 import { FeatureRequestDialog } from '@/components/game/FeatureRequestDialog';
-import { PatchNotesDialog } from '@/components/game/PatchNotesDialog';
 import { StartupWarningDialog } from '@/components/game/StartupWarningDialog';
 
 export default function Home() {
   const navigate = useNavigate();
   const { profile, isAuthenticated, signOut, loading } = useAuth();
   const [featureRequestOpen, setFeatureRequestOpen] = useState(false);
-  const [patchNotesOpen, setPatchNotesOpen] = useState(false);
 
   const handleSignOut = async () => {
     await signOut();
@@ -69,14 +67,6 @@ export default function Home() {
             >
               <MessageSquarePlus size={14} />
             </GameButton>
-            <GameButton 
-              variant="ghost" 
-              size="sm" 
-              onClick={() => setPatchNotesOpen(true)}
-              title="View patch notes"
-            >
-              <FileText size={14} />
-            </GameButton>
             <button 
               onClick={() => navigate('/profile')}
               className="flex items-center gap-2 bg-amber-950/60 px-3 py-2 border-2 border-amber-800/50 hover:border-amber-700 transition-colors cursor-pointer"
@@ -96,7 +86,7 @@ export default function Home() {
         ) : (
           <GameButton variant="primary" size="sm" onClick={() => navigate('/auth')}>
             <LogIn size={14} className="mr-2" />
-            Sign In
+            Create Account
           </GameButton>
         )}
       </div>
@@ -127,13 +117,27 @@ export default function Home() {
         </button>
         
         <button 
-          onClick={() => isAuthenticated ? navigate('/editor') : navigate('/auth')}
+          onClick={() => isAuthenticated ? navigate('/create-mode') : navigate('/auth')}
           className="group relative w-full py-4 px-6 bg-gradient-to-b from-stone-600 to-stone-700 border-4 border-stone-500 hover:from-stone-500 hover:to-stone-600 transition-all transform hover:scale-105 active:scale-95"
         >
           <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
           <div className="flex items-center justify-center gap-3">
             <Hammer size={22} className="text-stone-200" />
             <span className="font-pixel text-sm text-stone-100">CREATE LEVEL</span>
+          </div>
+          <div className="absolute top-1 left-1 w-2 h-2 rounded-full bg-gray-400 border border-gray-500" />
+          <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-gray-400 border border-gray-500" />
+          <div className="absolute bottom-1 left-1 w-2 h-2 rounded-full bg-gray-400 border border-gray-500" />
+          <div className="absolute bottom-1 right-1 w-2 h-2 rounded-full bg-gray-400 border border-gray-500" />
+        </button>
+
+        <button
+          onClick={() => isAuthenticated ? navigate('/friends') : navigate('/auth')}
+          className="group relative w-full py-4 px-6 bg-gradient-to-b from-cyan-700 to-cyan-800 border-4 border-cyan-600 hover:from-cyan-600 hover:to-cyan-700 transition-all transform hover:scale-105 active:scale-95"
+        >
+          <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+          <div className="flex items-center justify-center gap-3">
+            <span className="font-pixel text-sm text-cyan-100">FRIENDS</span>
           </div>
           <div className="absolute top-1 left-1 w-2 h-2 rounded-full bg-gray-400 border border-gray-500" />
           <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-gray-400 border border-gray-500" />
@@ -154,11 +158,6 @@ export default function Home() {
       <FeatureRequestDialog 
         open={featureRequestOpen} 
         onOpenChange={setFeatureRequestOpen} 
-      />
-
-      <PatchNotesDialog 
-        open={patchNotesOpen} 
-        onOpenChange={setPatchNotesOpen} 
       />
 
       <StartupWarningDialog />

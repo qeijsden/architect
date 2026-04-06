@@ -3,14 +3,21 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { GameButton } from '@/components/ui/GameButton';
 import { useAuth } from '@/hooks/useAuth';
 import { TexturePack, PixelData, BlockType } from '@/types/game';
-import { ArrowLeft, Download, Upload, RotateCcw, Palette, Copy, Check } from 'lucide-react';
-import { toast } from 'sonner';
+import { ArrowLeft, Download, Upload, RotateCcw, Palette, Check } from 'lucide-react';
+import { toast } from '@/lib/announcer';
 
-const TEXTURE_SIZES = [16, 32, 64, 128] as const;
+const FIXED_TEXTURE_SIZE = 32;
 const BLOCK_TYPES: BlockType[] = [
   'platform', 'hazard', 'goal', 'spawn', 'bounce', 'moving', 'ice', 'teleporter',
   'crumbling', 'conveyor', 'rotating_beam', 'checkpoint', 'low_gravity', 'tentacle',
   'speed_gate', 'ramp', 'cannon', 'wind', 'directional_impact', 'push_block', 'water', 'air_jump'
+];
+
+const BLOCK_TYPE_CATEGORIES: Array<{ name: string; types: BlockType[] }> = [
+  { name: 'Core', types: ['platform', 'hazard', 'goal', 'spawn', 'checkpoint'] },
+  { name: 'Movement', types: ['moving', 'bounce', 'air_jump', 'speed_gate', 'low_gravity'] },
+  { name: 'Terrain', types: ['ice', 'ramp', 'crumbling', 'conveyor', 'water'] },
+  { name: 'Mechanics', types: ['teleporter', 'rotating_beam', 'wind', 'cannon', 'push_block', 'directional_impact', 'tentacle'] },
 ];
 
 const DEFAULT_COLORS: Record<string, string> = {
@@ -46,7 +53,7 @@ export default function BLOXEditor() {
   const existingTexturePack = location.state?.texturePack as TexturePack | undefined;
   const levelId = location.state?.levelId as string | undefined;
 
-  const [textureSize, setTextureSize] = useState<16 | 32 | 64 | 128>(existingTexturePack?.size || 32);
+  const [textureSize] = useState<32>(FIXED_TEXTURE_SIZE);
   const [selectedBlockType, setSelectedBlockType] = useState<BlockType>(BLOCK_TYPES[0]);
   const [selectedColor, setSelectedColor] = useState(DEFAULT_COLORS['platform']);
   
@@ -55,9 +62,23 @@ export default function BLOXEditor() {
     const textures: Record<BlockType, string[]> = {} as Record<BlockType, string[]>;
     BLOCK_TYPES.forEach(blockType => {
       if (existingTexturePack?.textures[blockType]) {
-        textures[blockType] = [...existingTexturePack.textures[blockType]!.pixels];
+        const source = existingTexturePack.textures[blockType]!;
+        const sourcePixels = [...source.pixels];
+        if (source.width === FIXED_TEXTURE_SIZE && source.height === FIXED_TEXTURE_SIZE) {
+          textures[blockType] = sourcePixels;
+        } else {
+          const scaled = new Array(FIXED_TEXTURE_SIZE * FIXED_TEXTURE_SIZE).fill('#ffffff');
+          for (let y = 0; y < FIXED_TEXTURE_SIZE; y++) {
+            for (let x = 0; x < FIXED_TEXTURE_SIZE; x++) {
+              const srcX = Math.floor((x / FIXED_TEXTURE_SIZE) * source.width);
+              const srcY = Math.floor((y / FIXED_TEXTURE_SIZE) * source.height);
+              scaled[y * FIXED_TEXTURE_SIZE + x] = sourcePixels[srcY * source.width + srcX] || '#ffffff';
+            }
+          }
+          textures[blockType] = scaled;
+        }
       } else {
-        textures[blockType] = new Array((existingTexturePack?.size || 32) * (existingTexturePack?.size || 32)).fill(DEFAULT_COLORS[blockType] || '#ffffff');
+        textures[blockType] = new Array(FIXED_TEXTURE_SIZE * FIXED_TEXTURE_SIZE).fill(DEFAULT_COLORS[blockType] || '#ffffff');
       }
     });
     return textures;
@@ -74,9 +95,9 @@ export default function BLOXEditor() {
   const [packName, setPackName] = useState(existingTexturePack?.name || 'My Texture Pack');
   const [toolMode, setToolMode] = useState<'draw' | 'erase'>('draw');
   const [showColorPicker, setShowColorPicker] = useState(false);
-  const [copiedPack, setCopiedPack] = useState(false);
   
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const PIXEL_DISPLAY_SIZE = textureSize <= 32 ? 16 : 12; // Responsive pixel size
 
   // Redraw canvas
@@ -142,34 +163,6 @@ export default function BLOXEditor() {
     setSelectedBlockType(blockType);
   };
 
-  const handleSizeChange = (newSize: 16 | 32 | 64 | 128) => {
-    if (newSize === textureSize) return;
-    
-    // Scale all textures
-    const oldSize = textureSize;
-    const scaledTextures: Record<BlockType, string[]> = {} as Record<BlockType, string[]>;
-    
-    BLOCK_TYPES.forEach(blockType => {
-      const oldPixels = allBlockTextures[blockType] || new Array(oldSize * oldSize).fill('#ffffff');
-      const newPixels = new Array(newSize * newSize).fill('#ffffff');
-      
-      // Scale existing pixels
-      for (let y = 0; y < newSize; y++) {
-        for (let x = 0; x < newSize; x++) {
-          const srcX = Math.floor((x / newSize) * oldSize);
-          const srcY = Math.floor((y / newSize) * oldSize);
-          const srcIndex = srcY * oldSize + srcX;
-          const dstIndex = y * newSize + x;
-          newPixels[dstIndex] = oldPixels[srcIndex] || '#ffffff';
-        }
-      }
-      scaledTextures[blockType] = newPixels;
-    });
-
-    setTextureSize(newSize);
-    setAllBlockTextures(scaledTextures);
-  };
-
   const handleClear = () => {
     setPixels(new Array(textureSize * textureSize).fill('#ffffff'));
   };
@@ -214,23 +207,76 @@ export default function BLOXEditor() {
 
     const text = await file.text();
     try {
-      const imported = JSON.parse(text) as TexturePack;
-      setTextureSize(imported.size);
-      setPackName(imported.name);
+      const imported = JSON.parse(text) as Partial<TexturePack> & Record<string, any>;
+      const inferredName = typeof imported.name === 'string' && imported.name.trim().length > 0
+        ? imported.name
+        : file.name.replace(/\.(blox|json)$/i, '');
+      setPackName(inferredName);
+
+      const normalizeHex = (value: unknown, fallback: string) => {
+        if (typeof value !== 'string') return fallback;
+        const trimmed = value.trim();
+        if (trimmed === 'transparent') return 'transparent';
+        if (/^#[0-9a-fA-F]{6}$/.test(trimmed) || /^#[0-9a-fA-F]{3}$/.test(trimmed)) return trimmed;
+        return fallback;
+      };
+
+      const getSource = (blockType: BlockType): PixelData | null => {
+        const fromTextures = imported?.textures?.[blockType];
+        const fromBlocks = imported?.blocks?.[blockType];
+        const direct = imported?.[blockType];
+        const candidate = fromTextures || fromBlocks || direct;
+        if (!candidate) return null;
+
+        if (Array.isArray(candidate)) {
+          const side = Number(imported.size) || FIXED_TEXTURE_SIZE;
+          return {
+            width: side,
+            height: side,
+            pixels: candidate,
+          };
+        }
+
+        if (Array.isArray(candidate.pixels)) {
+          return {
+            width: Number(candidate.width) || Number(imported.size) || FIXED_TEXTURE_SIZE,
+            height: Number(candidate.height) || Number(imported.size) || FIXED_TEXTURE_SIZE,
+            pixels: candidate.pixels,
+          };
+        }
+
+        return null;
+      };
       
       // Load all textures from import
       const importedTextures: Record<BlockType, string[]> = {} as Record<BlockType, string[]>;
       BLOCK_TYPES.forEach(blockType => {
-        if (imported.textures[blockType]) {
-          importedTextures[blockType] = [...imported.textures[blockType]!.pixels];
+        const source = getSource(blockType);
+        if (source) {
+          const sourcePixels = [...source.pixels].map((p) => normalizeHex(p, DEFAULT_COLORS[blockType] || '#ffffff'));
+          if (source.width === FIXED_TEXTURE_SIZE && source.height === FIXED_TEXTURE_SIZE) {
+            importedTextures[blockType] = sourcePixels;
+          } else {
+            const scaled = new Array(FIXED_TEXTURE_SIZE * FIXED_TEXTURE_SIZE).fill('#ffffff');
+            for (let y = 0; y < FIXED_TEXTURE_SIZE; y++) {
+              for (let x = 0; x < FIXED_TEXTURE_SIZE; x++) {
+                const srcX = Math.floor((x / FIXED_TEXTURE_SIZE) * source.width);
+                const srcY = Math.floor((y / FIXED_TEXTURE_SIZE) * source.height);
+                scaled[y * FIXED_TEXTURE_SIZE + x] = sourcePixels[srcY * source.width + srcX] || '#ffffff';
+              }
+            }
+            importedTextures[blockType] = scaled;
+          }
         } else {
-          importedTextures[blockType] = new Array(imported.size * imported.size).fill(DEFAULT_COLORS[blockType] || '#ffffff');
+          importedTextures[blockType] = new Array(FIXED_TEXTURE_SIZE * FIXED_TEXTURE_SIZE).fill(DEFAULT_COLORS[blockType] || '#ffffff');
         }
       });
       setAllBlockTextures(importedTextures);
-      toast.success('Texture pack imported!');
+      toast.success('Texture pack imported and normalized to 32x32!');
     } catch (error) {
       toast.error('Failed to import texture pack');
+    } finally {
+      e.target.value = '';
     }
   };
 
@@ -274,6 +320,23 @@ export default function BLOXEditor() {
     toast.success('Texture pack applied to level!');
   };
 
+  const openImportPicker = () => {
+    const input = importInputRef.current;
+    if (!input) return;
+
+    try {
+      const pickerCapable = input as HTMLInputElement & { showPicker?: () => void };
+      if (typeof pickerCapable.showPicker === 'function') {
+        pickerCapable.showPicker();
+        return;
+      }
+    } catch {
+      // Fall through to click fallback.
+    }
+
+    input.click();
+  };
+
   return (
     <div className="min-h-screen bg-background p-4">
       <div className="max-w-7xl mx-auto">
@@ -308,22 +371,9 @@ export default function BLOXEditor() {
                 />
               </div>
 
-              {/* Texture Size */}
-              <div className="mb-4">
-                <label className="font-pixel-body text-xs text-foreground block mb-2">Texture Size</label>
-                <div className="flex gap-2">
-                  {TEXTURE_SIZES.map(size => (
-                    <GameButton
-                      key={size}
-                      variant={textureSize === size ? 'primary' : 'outline'}
-                      size="sm"
-                      onClick={() => handleSizeChange(size)}
-                    >
-                      {size}x{size}
-                    </GameButton>
-                  ))}
-                </div>
-              </div>
+              <p className="font-pixel-body text-xs text-muted-foreground mb-4">
+                BLOX textures are fixed at 32x32.
+              </p>
 
               {/* Tool Mode */}
               <div className="flex gap-2">
@@ -400,16 +450,23 @@ export default function BLOXEditor() {
             {/* Block Type Selection */}
             <div className="bg-card/50 p-4 pixel-border">
               <label className="font-pixel text-sm text-foreground block mb-2">Block Types</label>
-              <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                {BLOCK_TYPES.map(blockType => (
-                  <GameButton
-                    key={blockType}
-                    variant={selectedBlockType === blockType ? 'primary' : 'outline'}
-                    size="sm"
-                    onClick={() => handleBlockTypeChange(blockType)}
-                  >
-                    <span className="text-[9px]">{blockType.substring(0, 6)}</span>
-                  </GameButton>
+              <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                {BLOCK_TYPE_CATEGORIES.map((category) => (
+                  <div key={category.name}>
+                    <p className="font-pixel text-[9px] text-primary mb-1">{category.name}</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {category.types.map(blockType => (
+                        <GameButton
+                          key={blockType}
+                          variant={selectedBlockType === blockType ? 'primary' : 'outline'}
+                          size="sm"
+                          onClick={() => handleBlockTypeChange(blockType)}
+                        >
+                          <span className="text-[9px]">{blockType.substring(0, 6)}</span>
+                        </GameButton>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -432,18 +489,23 @@ export default function BLOXEditor() {
                   Export Pack
                 </GameButton>
 
-                <label className="block">
-                  <GameButton size="sm" variant="outline" className="w-full cursor-pointer">
-                    <Upload size={12} className="mr-2" />
-                    Import Pack
-                  </GameButton>
-                  <input
-                    type="file"
-                    accept=".blox,.json"
-                    onChange={handleImportTexturePackJSON}
-                    className="hidden"
-                  />
-                </label>
+                <GameButton
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={openImportPicker}
+                >
+                  <Upload size={12} className="mr-2" />
+                  Import Pack
+                </GameButton>
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept=".blox,.json,application/json"
+                  onChange={handleImportTexturePackJSON}
+                  className="absolute -left-[9999px] w-px h-px opacity-0 pointer-events-none"
+                  tabIndex={-1}
+                />
               </div>
 
               {/* Apply to Level */}

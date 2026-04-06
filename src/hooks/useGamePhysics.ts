@@ -1,16 +1,34 @@
 import { useCallback, useRef } from 'react';
 import { Block, Player, CannonBall } from '@/types/game';
 import { GamepadInput } from './useXboxGamepad';
+import { blockHasBehavior, isSolidBlock } from '@/lib/blockBehaviors';
+import { isPhasePlatformActive, isPulseHazardActive } from '@/lib/survivalBlocks';
 
 const GRAVITY = 0.6;
 const JUMP_FORCE = -14;
 const MOVE_SPEED = 8;
 const FRICTION = 0.85;
 const ICE_FRICTION = 0.98;
+const ICE_MAX_SPEED_DEFAULT = 20;
 const BOUNCE_FORCE = -18;
 const CONVEYOR_SPEED = 3;
 const GRID_SIZE = 32;
 const COYOTE_TIME_FRAMES = 6; // Frames to allow jump after leaving ground
+const WIND_FORCE_MULTIPLIER = 2;
+
+const directionToAngle = (direction: Block['windDirection']): number => {
+  switch (direction) {
+    case 'up':
+      return 270;
+    case 'down':
+      return 90;
+    case 'left':
+      return 180;
+    case 'right':
+    default:
+      return 0;
+  }
+};
 
 export function useGamePhysics() {
   const keysRef = useRef<Set<string>>(new Set());
@@ -58,7 +76,7 @@ export function useGamePhysics() {
     }
     if (!block.teleporterId) return null;
     return blocks.find(b => 
-      b.type === 'teleporter' && 
+      blockHasBehavior(b, 'teleporter') && 
       b.teleporterId === block.teleporterId && 
       b.id !== block.id
     ) || null;
@@ -79,7 +97,7 @@ export function useGamePhysics() {
     ];
     
     for (const block of blocks) {
-      if (block.id === pivot.id || block.type === 'rotating_beam') continue;
+      if (block.id === pivot.id || blockHasBehavior(block, 'rotating_beam')) continue;
       if (block.isLocked) continue;
       
       for (const dir of directions) {
@@ -95,7 +113,7 @@ export function useGamePhysics() {
 
   // Update rotating blocks - FIXED to properly rotate
   const updateRotatingBlocks = useCallback((blocks: Block[]): Block[] => {
-    const pivots = blocks.filter(b => b.type === 'rotating_beam');
+    const pivots = blocks.filter((block) => blockHasBehavior(block, 'rotating_beam'));
     if (pivots.length === 0) return blocks;
     
     // First pass: update rotation angles for all pivots
@@ -107,7 +125,7 @@ export function useGamePhysics() {
     }
     
     return blocks.map(block => {
-      if (block.type === 'rotating_beam') return block;
+      if (blockHasBehavior(block, 'rotating_beam')) return block;
       
       // Find which pivot this block should be attached to
       let attachedPivot: Block | undefined;
@@ -163,7 +181,7 @@ export function useGamePhysics() {
   // Update moving platforms
   const updateMovingBlocks = useCallback((blocks: Block[]): Block[] => {
     return blocks.map(block => {
-      if (block.type !== 'moving') return block;
+      if (!blockHasBehavior(block, 'moving')) return block;
       
       const originalX = block.originalX ?? block.x;
       const range = (block.moveRange || 3) * GRID_SIZE;
@@ -187,7 +205,7 @@ export function useGamePhysics() {
   const updateCannonBalls = useCallback((blocks: Block[]): CannonBall[] => {
     const now = Date.now();
     
-    const cannons = blocks.filter(b => b.type === 'cannon');
+    const cannons = blocks.filter((block) => blockHasBehavior(block, 'cannon'));
     for (const cannon of cannons) {
       const lastFired = cannonTimersRef.current.get(cannon.id) || 0;
       const interval = cannon.cannonInterval || 2000;
@@ -244,11 +262,17 @@ export function useGamePhysics() {
     
     updateCannonBalls(blocks);
 
-    let { x, y, vx, vy, isGrounded, lastCheckpoint, speedBoostMultiplier, speedBoostEndTime } = player;
+    let { x, y, vx, vy, isGrounded, onIce = false, lastCheckpoint, speedBoostMultiplier, speedBoostEndTime } = player;
     const playerSize = 32;
     let currentFriction = FRICTION;
     let currentGravity = GRAVITY;
-    const solidTypes: Block['type'][] = ['platform', 'spawn', 'moving', 'ice', 'crumbling', 'conveyor', 'rotating_beam', 'cannon', 'push_block'];
+    const isSolidNow = (block: Block) => {
+      if (!isSolidBlock(block)) return false;
+      if (blockHasBehavior(block, 'crumbling') && block.crumbleState === 'broken') return false;
+      if (blockHasBehavior(block, 'phase_platform') && !isPhasePlatformActive(block)) return false;
+      if (block.isGhost) return false;
+      return true;
+    };
 
     const now = Date.now();
     if (speedBoostEndTime && now >= speedBoostEndTime) {
@@ -262,7 +286,7 @@ export function useGamePhysics() {
     let canWallJump = false;
     let wallJumpPower = 1;
     for (const block of updatedBlocks) {
-      if (block.type === 'air_jump' && checkCollision({ ...player, x, y, vx, vy, isGrounded, isDead: false, hasWon: false }, block)) {
+      if (blockHasBehavior(block, 'air_jump') && checkCollision({ ...player, x, y, vx, vy, isGrounded, isDead: false, hasWon: false }, block)) {
         canWallJump = true;
         wallJumpPower = block.wallJumpPower || 1;
         break;
@@ -293,7 +317,7 @@ export function useGamePhysics() {
 
     // Check for low gravity zones (5x5 area)
     for (const block of updatedBlocks) {
-      if (block.type === 'low_gravity') {
+      if (blockHasBehavior(block, 'low_gravity')) {
         // 5x5 zone centered on block
         const zoneLeft = block.x - GRID_SIZE * 2;
         const zoneRight = block.x + GRID_SIZE * 3;
@@ -319,7 +343,9 @@ export function useGamePhysics() {
     vx *= currentFriction;
     vy += currentGravity;
 
-    vx = Math.max(-effectiveSpeed, Math.min(effectiveSpeed, vx));
+    if (!onIce) {
+      vx = Math.max(-effectiveSpeed, Math.min(effectiveSpeed, vx));
+    }
     vy = Math.max(-20, Math.min(15, vy));
 
     x += vx;
@@ -328,7 +354,8 @@ export function useGamePhysics() {
     isGrounded = false;
     let isDead = false;
     let hasWon = false;
-    let onIce = false;
+    let onIceNow = false;
+    let iceBlock: Block | null = null;
     let conveyorForce = 0;
 
     // Cannon ball collisions
@@ -347,7 +374,7 @@ export function useGamePhysics() {
     // Block collisions
     for (const block of updatedBlocks) {
       // Checkpoint - touching it sets respawn and deactivates spawn
-      if (block.type === 'checkpoint') {
+      if (blockHasBehavior(block, 'checkpoint')) {
         if (checkCollision({ ...player, x, y, vx, vy, isGrounded, isDead, hasWon }, block)) {
           if (!checkpointTouchedRef.current || 
               !lastCheckpoint || 
@@ -361,19 +388,19 @@ export function useGamePhysics() {
       }
 
       // Ghost spawn - no collision when checkpoint touched
-      if (block.type === 'spawn') {
+      if (blockHasBehavior(block, 'spawn')) {
         if (block.isGhost || checkpointTouchedRef.current) {
           continue;
         }
       }
 
       // Low gravity zone - no collision
-      if (block.type === 'low_gravity') {
+      if (blockHasBehavior(block, 'low_gravity')) {
         continue;
       }
 
       // Speed gate - no collision
-      if (block.type === 'speed_gate') {
+      if (blockHasBehavior(block, 'speed_gate')) {
         if (checkCollision({ ...player, x, y, vx, vy, isGrounded, isDead, hasWon }, block)) {
           speedBoostMultiplier = block.speedMultiplier || 2;
           speedBoostEndTime = now + (block.speedDuration || 3000);
@@ -382,7 +409,7 @@ export function useGamePhysics() {
       }
 
       // Tentacle - proximity slam
-      if (block.type === 'tentacle') {
+      if (blockHasBehavior(block, 'tentacle')) {
         const radius = (block.tentacleRadius || 3) * GRID_SIZE;
         const centerX = block.x + block.width / 2;
         const centerY = block.y + block.height / 2;
@@ -404,29 +431,44 @@ export function useGamePhysics() {
       }
 
       // Zone blocks - no collision, just detection
-      if (block.type === 'zone') {
+      if (blockHasBehavior(block, 'zone')) {
         // Zone detection for scoring happens in game component
         continue;
       }
 
       if (!checkCollision({ ...player, x, y, vx, vy, isGrounded, isDead, hasWon }, block)) continue;
 
-      if (block.type === 'hazard') {
+      if (blockHasBehavior(block, 'pulse_hazard') && !isPulseHazardActive(block)) {
+        continue;
+      }
+
+      if (blockHasBehavior(block, 'phase_platform') && !isPhasePlatformActive(block)) {
+        continue;
+      }
+
+      if (blockHasBehavior(block, 'timer_orb')) {
+        if (!block.collected && updateBlock) {
+          updateBlock(block.id, { collected: true });
+        }
+        continue;
+      }
+
+      if (blockHasBehavior(block, 'hazard') || blockHasBehavior(block, 'pulse_hazard')) {
         isDead = true;
         break;
       }
 
-      if (block.type === 'goal') {
+      if (blockHasBehavior(block, 'goal')) {
         hasWon = true;
         break;
       }
 
-      if (block.type === 'bounce') {
+      if (blockHasBehavior(block, 'bounce')) {
         vy = BOUNCE_FORCE;
         continue;
       }
 
-      if (block.type === 'teleporter') {
+      if (blockHasBehavior(block, 'teleporter')) {
         const destination = findTeleportDestination(block, updatedBlocks);
         if (destination) {
           x = destination.x;
@@ -438,7 +480,7 @@ export function useGamePhysics() {
       }
 
       // Crumbling platforms
-      if (block.type === 'crumbling') {
+      if (blockHasBehavior(block, 'crumbling')) {
         if (block.crumbleState === 'broken') continue;
         
         const timers = crumbleTimersRef.current.get(block.id);
@@ -463,7 +505,7 @@ export function useGamePhysics() {
       }
 
       // Water - buoyancy and slowness
-      if (block.type === 'water') {
+      if (blockHasBehavior(block, 'water')) {
         if (checkCollision({ ...player, x, y, vx, vy, isGrounded, isDead: false, hasWon: false }, block)) {
           const density = block.waterDensity || 1.2;
           vy *= 0.6; // Slow vertical movement
@@ -476,20 +518,18 @@ export function useGamePhysics() {
       }
 
       // Wind - applies force in direction
-      if (block.type === 'wind') {
+      if (blockHasBehavior(block, 'wind')) {
         if (checkCollision({ ...player, x, y, vx, vy, isGrounded, isDead, hasWon }, block)) {
-          const force = block.windForce || 0.8;
-          const dir = block.windDirection || 'right';
-          if (dir === 'left') vx -= force;
-          else if (dir === 'right') vx += force;
-          else if (dir === 'up') vy -= force;
-          else if (dir === 'down') vy += force;
+          const force = (block.windForce || 0.8) * WIND_FORCE_MULTIPLIER;
+          const angle = ((block.windAngle ?? directionToAngle(block.windDirection)) * Math.PI) / 180;
+          vx += Math.cos(angle) * force;
+          vy += Math.sin(angle) * force;
         }
         continue;
       }
 
       // Directional Impact - knockback instead of death
-      if (block.type === 'directional_impact') {
+      if (blockHasBehavior(block, 'directional_impact')) {
         if (checkCollision({ ...player, x, y, vx, vy, isGrounded, isDead, hasWon }, block)) {
           const force = block.knockbackForce || 15;
           const dir = block.knockbackDirection || 'up';
@@ -502,15 +542,16 @@ export function useGamePhysics() {
       }
 
       // Air Jump - allows jumping off air_jump platforms
-      if (block.type === 'air_jump') {
+      if (blockHasBehavior(block, 'air_jump')) {
         // Just mark as solid for collision purposes
         continue;
       }
 
       // Ramp collision - smooth slope
-      if (block.type === 'ramp') {
+      if (blockHasBehavior(block, 'ramp')) {
         const rampDir = block.rampDirection || 'right';
-        const relativeX = (x + playerSize / 2) - block.x;
+        const playerEdge = rampDir === 'left' ? x : x + playerSize;
+        const relativeX = playerEdge - block.x;
         const progress = Math.max(0, Math.min(1, relativeX / block.width));
         const rampHeight = rampDir === 'right' 
           ? (1 - progress) * block.height 
@@ -528,7 +569,7 @@ export function useGamePhysics() {
       }
 
       // Ice Slope collision - ice can act as a ramp
-      if (block.type === 'ice' && block.isSlopeIce) {
+      if (blockHasBehavior(block, 'ice') && block.isSlopeIce) {
         const slopeDir = block.iceSlope || 'right';
         const relativeX = (x + playerSize / 2) - block.x;
         const progress = Math.max(0, Math.min(1, relativeX / block.width));
@@ -549,7 +590,7 @@ export function useGamePhysics() {
       }
 
       // Solid block collision
-      if (solidTypes.includes(block.type) && block.crumbleState !== 'broken' && !block.isGhost) {
+      if (isSolidNow(block)) {
         const prevBottom = player.y + playerSize;
         const blockTop = block.y;
 
@@ -559,17 +600,18 @@ export function useGamePhysics() {
           vy = 0;
           isGrounded = true;
 
-          if (block.type === 'ice') {
-            onIce = true;
+          if (blockHasBehavior(block, 'ice')) {
+            onIceNow = true;
+            iceBlock = block;
           }
 
-          if (block.type === 'conveyor') {
+          if (blockHasBehavior(block, 'conveyor')) {
             const speed = block.moveSpeed || CONVEYOR_SPEED;
             conveyorForce = block.direction === 'left' ? -speed : speed;
           }
           
           // Moving platform velocity inheritance
-          if (block.type === 'moving') {
+          if (blockHasBehavior(block, 'moving')) {
             const range = (block.moveRange || 3) * GRID_SIZE;
             const speed = (block.moveSpeed || 0.5) * 0.1;
             const phase = movingBlockPhaseRef.current.get(block.id) || 0;
@@ -584,16 +626,14 @@ export function useGamePhysics() {
         }
         // Side collision
         else {
-          if (block.type === 'push_block' && updateBlock && vx !== 0) {
+          if (blockHasBehavior(block, 'push_block') && updateBlock && vx !== 0) {
             const weight = block.pushBlockWeight || 1;
             const pushDelta = Math.sign(vx) * Math.max(0.5, Math.min(4, Math.abs(vx))) / weight;
             const newX = block.x + pushDelta;
             const candidate = { ...block, x: newX };
             const isBlocked = updatedBlocks.some(other => {
               if (other.id === block.id) return false;
-              if (!solidTypes.includes(other.type)) return false;
-              if (other.isGhost) return false;
-              if (other.crumbleState === 'broken') return false;
+              if (!isSolidNow(other)) return false;
               return blocksOverlap(candidate, other);
             });
 
@@ -616,8 +656,12 @@ export function useGamePhysics() {
       }
     }
 
-    if (onIce) {
+    if (onIceNow) {
       vx *= ICE_FRICTION / FRICTION;
+      const maxIceSpeed = (iceBlock?.capSledding && iceBlock?.maxSlideSpeed)
+        ? iceBlock.maxSlideSpeed
+        : ICE_MAX_SPEED_DEFAULT;
+      vx = Math.max(-maxIceSpeed, Math.min(maxIceSpeed, vx));
     }
 
     x += conveyorForce;
@@ -637,6 +681,7 @@ export function useGamePhysics() {
     return { 
       ...player, 
       x, y, vx, vy, isGrounded, isDead, hasWon, lastCheckpoint,
+      onIce: onIceNow,
       speedBoostMultiplier,
       speedBoostEndTime,
     };

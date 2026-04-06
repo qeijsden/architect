@@ -7,7 +7,7 @@ import {
   ArrowLeft, Users, UserPlus, Check, X, 
   UserMinus, MessageSquare, Gamepad2, Copy
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/announcer';
 
 const AVATAR_COLORS = [
   '#26c6da', '#e53935', '#43a047', '#ffb300', 

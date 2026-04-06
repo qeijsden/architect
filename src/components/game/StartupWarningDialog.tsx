@@ -18,9 +18,9 @@ export function StartupWarningDialog() {
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
       <div className="bg-card border border-border rounded-md p-5 w-full max-w-lg">
-        <h2 className="font-pixel text-xs text-primary mb-3">Heads Up</h2>
+        <h2 className="font-pixel text-xs text-primary mb-3">Warning</h2>
         <p className="font-pixel-body text-sm text-muted-foreground mb-4">
-          Desktop exports now use the lightweight Tauri runtime. Steam builds require Steamworks runtime files and a valid Steam App ID.
+          Warning this game is missing art assets, create and share them using BLOX editor in level creation and share them through feature request to add the BLOX back.
         </p>
         <div className="flex justify-end">
           <GameButton

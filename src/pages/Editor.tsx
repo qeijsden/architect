@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Block, BlockType, Player, BlockSettings, DEFAULT_BLOCK_SETTINGS, TexturePack } from '@/types/game';
+import { Block, BlockType, Player, BlockSettings, DEFAULT_BLOCK_SETTINGS, TexturePack, CustomBlockDefinition, LevelMode } from '@/types/game';
 import { GameCanvas } from '@/components/game/GameCanvas';
 import { BlockPalette } from '@/components/game/BlockPalette';
 import { BlockSettingsPanel } from '@/components/game/BlockSettingsPanel';
@@ -9,8 +9,11 @@ import { GameButton } from '@/components/ui/GameButton';
 import { useGamePhysics } from '@/hooks/useGamePhysics';
 import { useAuth } from '@/hooks/useAuth';
 import { useLevels } from '@/hooks/useLevels';
-import { ArrowLeft, Play, Square, Save, Trash2, LogIn, Link, Clock, Grid3x3, Palette } from 'lucide-react';
-import { toast } from 'sonner';
+import { parseLevelMusicLink } from '@/lib/levelMusic';
+import { ArrowLeft, Play, Square, Save, Trash2, LogIn, Link, Clock, Grid3x3, Palette, Brush, Edit3, Music4, ExternalLink } from 'lucide-react';
+import { toast } from '@/lib/announcer';
+import { isSpriteReadyBlock } from '@/lib/editor-sprites';
+import { blockHasBehavior } from '@/lib/blockBehaviors';
 
 const GRID_SIZE = 32;
 const CANVAS_WIDTH = 1920; // Increased from 1440
@@ -19,6 +22,49 @@ const GROUND_Y = CANVAS_HEIGHT - GRID_SIZE;
 const GROUND_DEPTH = 50; // Increased from 25 (50 blocks deep of lava)
 const LEVEL_WIDTH = CANVAS_WIDTH * 8; // Increased from * 5
 const MAX_LEVEL_TIME = 300; // 5 minutes max
+const EDITOR_SCALE = 1;
+
+const buildBlockFieldOverrides = (selectedBlock: BlockType, blockSettings: BlockSettings, customBlockId?: string | null): Partial<Block> => {
+  const usesBehavior = (behavior: BlockType) => selectedBlock === behavior || (selectedBlock === 'custom' && blockSettings.customBehaviorTypes.includes(behavior));
+
+  return {
+    customBlockId: selectedBlock === 'custom' ? customBlockId || undefined : undefined,
+    customBehaviorTypes: selectedBlock === 'custom' ? blockSettings.customBehaviorTypes : undefined,
+    direction: usesBehavior('conveyor') ? blockSettings.conveyorDirection : undefined,
+    moveSpeed: usesBehavior('conveyor') ? blockSettings.conveyorSpeed : usesBehavior('moving') ? blockSettings.moveSpeed : undefined,
+    moveRange: usesBehavior('moving') ? blockSettings.moveRange : undefined,
+    crumbleState: usesBehavior('crumbling') ? 'solid' : undefined,
+    crumbleTime: usesBehavior('crumbling') ? blockSettings.crumbleTime : undefined,
+    resetTime: usesBehavior('crumbling') ? blockSettings.resetTime : undefined,
+    isGhost: usesBehavior('spawn') ? blockSettings.spawnIsGhost : undefined,
+    gravityMultiplier: usesBehavior('low_gravity') ? blockSettings.gravityMultiplier : undefined,
+    tentacleRadius: usesBehavior('tentacle') ? blockSettings.tentacleRadius : undefined,
+    tentacleForce: usesBehavior('tentacle') ? blockSettings.tentacleForce : undefined,
+    speedMultiplier: usesBehavior('speed_gate') ? blockSettings.speedMultiplier : undefined,
+    speedDuration: usesBehavior('speed_gate') ? blockSettings.speedDuration : undefined,
+    rampDirection: usesBehavior('ramp') ? blockSettings.rampDirection : undefined,
+    rampColor: usesBehavior('ramp') ? blockSettings.rampColor : undefined,
+    platformColor: usesBehavior('platform') ? blockSettings.platformColor : undefined,
+    pushBlockShape: usesBehavior('push_block') ? blockSettings.pushBlockShape : undefined,
+    pushBlockWeight: usesBehavior('push_block') ? blockSettings.pushBlockWeight : undefined,
+    cannonAngle: usesBehavior('cannon') ? blockSettings.cannonAngle : undefined,
+    cannonArc: usesBehavior('cannon') ? blockSettings.cannonArc : undefined,
+    cannonInterval: usesBehavior('cannon') ? blockSettings.cannonInterval : undefined,
+    windForce: usesBehavior('wind') ? blockSettings.windForce : undefined,
+    windDirection: usesBehavior('wind') ? blockSettings.windDirection : undefined,
+    windAngle: usesBehavior('wind') ? blockSettings.windAngle : undefined,
+    waterDensity: usesBehavior('water') ? blockSettings.waterDensity : undefined,
+    isSlopeIce: usesBehavior('ice') && blockSettings.iceSlope !== undefined ? true : undefined,
+    iceSlope: usesBehavior('ice') ? blockSettings.iceSlope : undefined,
+    capSledding: usesBehavior('ice') ? blockSettings.iceCappedSledding : undefined,
+    maxSlideSpeed: usesBehavior('ice') ? blockSettings.iceMaxSlideSpeed : undefined,
+    pulseInterval: usesBehavior('pulse_hazard') ? blockSettings.pulseInterval : undefined,
+    pulseActiveDuration: usesBehavior('pulse_hazard') ? blockSettings.pulseActiveDuration : undefined,
+    phaseInterval: usesBehavior('phase_platform') ? blockSettings.phaseInterval : undefined,
+    phaseActiveDuration: usesBehavior('phase_platform') ? blockSettings.phaseActiveDuration : undefined,
+    timerBonusSeconds: usesBehavior('timer_orb') ? blockSettings.timerBonusSeconds : undefined,
+  };
+};
 
 // Generate permanent hazard ground blocks covering the entire level width and 25 blocks deep
 const generateGroundBlocks = (): Block[] => {
@@ -42,16 +88,18 @@ const generateGroundBlocks = (): Block[] => {
 export default function Editor() {
   const navigate = useNavigate();
   const location = useLocation();
+  const routeState = location.state as { importLevel?: any; editLevel?: any; appliedTexturePack?: TexturePack; mode?: LevelMode } | null;
   const { user, profile, isAuthenticated, loading: authLoading } = useAuth();
-  const { createLevel } = useLevels();
+  const { createLevel, updateLevel } = useLevels();
   
   const [blocks, setBlocks] = useState<Block[]>(generateGroundBlocks());
   const [selectedBlock, setSelectedBlock] = useState<BlockType | null>('platform');
   const [isPlaying, setIsPlaying] = useState(false);
   const [player, setPlayer] = useState<Player | null>(null);
+  const [levelMode, setLevelMode] = useState<LevelMode>(routeState?.mode || 'race');
   const [cameraX, setCameraX] = useState(-100); // Start camera at left
   const [cameraY, setCameraY] = useState(0);
-  const [cameraSpeed, setCameraSpeed] = useState(0.1); // Adjustable camera panning speed
+  const [showSongEditor, setShowSongEditor] = useState(false);
   const [levelName, setLevelName] = useState('My Level');
   const [hasBeenValidated, setHasBeenValidated] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -60,19 +108,57 @@ export default function Editor() {
   const [completionTime, setCompletionTime] = useState<number | null>(null);
   const [showMaxTimeDialog, setShowMaxTimeDialog] = useState(false);
   const [maxTime, setMaxTime] = useState<number>(60);
-  const [allowImport, setAllowImport] = useState(false);
   const [trackUrl, setTrackUrl] = useState('');
+  const [trackTitle, setTrackTitle] = useState('');
+  const [trackArtist, setTrackArtist] = useState('');
   const [blockSettings, setBlockSettings] = useState<BlockSettings>(DEFAULT_BLOCK_SETTINGS);
+  const [customBlocks, setCustomBlocks] = useState<CustomBlockDefinition[]>([]);
+  const [selectedCustomBlockId, setSelectedCustomBlockId] = useState<string | null>(null);
   const [blockStyle, setBlockStyle] = useState<'classic' | 'modern'>('modern');
   const [showGridSizeDialog, setShowGridSizeDialog] = useState(false);
   const [gridSize, setGridSize] = useState(32); // Grid size for level
   const [levelWidth, setLevelWidth] = useState(CANVAS_WIDTH * 5);
   const [levelHeight, setLevelHeight] = useState(CANVAS_HEIGHT * 3);
   const [texturePack, setTexturePack] = useState<TexturePack | null>(null);
+  const [selectedPlacedBlockId, setSelectedPlacedBlockId] = useState<string | null>(null);
+  const [editorTool, setEditorTool] = useState<'place' | 'edit'>('place');
+  const [viewportSize, setViewportSize] = useState(() => ({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1600,
+    height: typeof window !== 'undefined' ? window.innerHeight : 950,
+  }));
 
-  const importLevel = (location.state as { importLevel?: any; editLevel?: any; appliedTexturePack?: TexturePack } | null)?.importLevel;
-  const editLevel = (location.state as { importLevel?: any; editLevel?: any; appliedTexturePack?: TexturePack } | null)?.editLevel;
-  const appliedTexturePack = (location.state as { appliedTexturePack?: TexturePack } | null)?.appliedTexturePack;
+  const importLevel = routeState?.importLevel;
+  const editLevel = routeState?.editLevel;
+  const appliedTexturePack = routeState?.appliedTexturePack;
+  const parsedTrack = useMemo(() => parseLevelMusicLink(trackUrl), [trackUrl]);
+  const hasSongDetails = useMemo(
+    () => Boolean(trackUrl.trim() || trackTitle.trim() || trackArtist.trim()),
+    [trackArtist, trackTitle, trackUrl],
+  );
+  const modeDescription = levelMode === 'survival'
+    ? 'Stay alive for the target time. The publish target cannot exceed your best test survival.'
+    : 'Reach the goal as fast as possible. Publish with a max allowed time.';
+  const selectedCustomBlock = useMemo(
+    () => (selectedCustomBlockId ? customBlocks.find((block) => block.id === selectedCustomBlockId) || null : null),
+    [customBlocks, selectedCustomBlockId],
+  );
+  const editorCanvasWidth = useMemo(() => {
+    const horizontalChrome = isPlaying ? 48 : viewportSize.width >= 1280 ? 600 : 96;
+    return Math.max(960, viewportSize.width - horizontalChrome);
+  }, [isPlaying, viewportSize.width]);
+  const editorCanvasHeight = useMemo(() => {
+    const verticalChrome = isPlaying ? 190 : showSongEditor ? 290 : 215;
+    return Math.max(540, viewportSize.height - verticalChrome);
+  }, [isPlaying, showSongEditor, viewportSize.height]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportSize({ width: window.innerWidth, height: window.innerHeight });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (!importLevel && !editLevel) return;
@@ -84,18 +170,28 @@ export default function Editor() {
     if (editLevel) {
       // Editing existing level
       setLevelName(editLevel.name || 'Untitled Level');
-      setAllowImport(editLevel.allowImport || false);
       setHasBeenValidated(editLevel.validated || false);
+      setLevelMode(editLevel.mode || 'race');
+      setTrackUrl(editLevel.trackUrl || '');
+      setTrackTitle(editLevel.trackTitle || '');
+      setTrackArtist(editLevel.trackArtist || '');
+      setCustomBlocks(Array.isArray(editLevel.customBlocks) ? editLevel.customBlocks : []);
+      setMaxTime(editLevel.mode === 'survival' ? (editLevel.survival_time_seconds || 60) : (editLevel.max_time_seconds || 60));
       if (editLevel.texturePack) {
         setTexturePack(editLevel.texturePack);
       }
     } else {
       // Importing as copy
       setLevelName(importLevel.name ? `${importLevel.name} (Copy)` : 'Copied Level');
-      setAllowImport(false);
       setHasBeenValidated(false);
+      setLevelMode(importLevel.mode || routeState?.mode || 'race');
+      setTrackUrl(importLevel.trackUrl || '');
+      setTrackTitle(importLevel.trackTitle || '');
+      setTrackArtist(importLevel.trackArtist || '');
+      setCustomBlocks(Array.isArray(importLevel.customBlocks) ? importLevel.customBlocks : []);
+      setMaxTime(importLevel.mode === 'survival' ? (importLevel.survival_time_seconds || 60) : (importLevel.max_time_seconds || 60));
     }
-  }, [importLevel, editLevel]);
+  }, [importLevel, editLevel, routeState?.mode]);
 
   // Handle applied texture pack from BLOX Editor
   useEffect(() => {
@@ -108,8 +204,70 @@ export default function Editor() {
   const { handleKeyDown: physicsKeyDown, handleKeyUp: physicsKeyUp, updatePlayer, resetCrumbleTimers, resetRotationAngles, getUpdatedBlockPositions } = useGamePhysics();
   const gameLoopRef = useRef<number>();
   const testStartTimeRef = useRef<number>(0);
-  const keysPressed = useRef<Set<string>>(new Set());
-  const mousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const keysPressedRef = useRef<Set<string>>(new Set());
+
+  const selectedPlacedBlock = useMemo(
+    () => (selectedPlacedBlockId ? blocks.find((b) => b.id === selectedPlacedBlockId) || null : null),
+    [blocks, selectedPlacedBlockId],
+  );
+
+  const handleSaveCustomBlock = useCallback((definition: CustomBlockDefinition) => {
+    setCustomBlocks((prev) => {
+      const existing = prev.find((entry) => entry.id === definition.id);
+      if (existing) {
+        return prev.map((entry) => (entry.id === definition.id ? { ...entry, ...definition } : entry));
+      }
+      return [...prev, definition];
+    });
+    setBlocks((prev) => prev.map((block) => {
+      if (block.customBlockId !== definition.id) return block;
+      return {
+        ...block,
+        ...buildBlockFieldOverrides('custom', { ...definition.settings, customBehaviorTypes: definition.behaviorTypes }, definition.id),
+      };
+    }));
+    setSelectedCustomBlockId(definition.id);
+    setSelectedBlock('custom');
+    setBlockSettings({ ...definition.settings, customBehaviorTypes: definition.behaviorTypes });
+  }, []);
+
+  const handleDeleteCustomBlock = useCallback((customBlockId: string) => {
+    setCustomBlocks((prev) => prev.filter((entry) => entry.id !== customBlockId));
+    setBlocks((prev) => prev.filter((block) => block.customBlockId !== customBlockId));
+    if (selectedCustomBlockId === customBlockId) {
+      setSelectedCustomBlockId(null);
+      setSelectedBlock('platform');
+    }
+    setHasBeenValidated(false);
+  }, [selectedCustomBlockId]);
+
+  useEffect(() => {
+    if (!selectedCustomBlock) {
+      return;
+    }
+
+    setBlockSettings({
+      ...selectedCustomBlock.settings,
+      customBehaviorTypes: selectedCustomBlock.behaviorTypes,
+    });
+  }, [selectedCustomBlock]);
+
+  useEffect(() => {
+    if (selectedBlock !== 'custom' || !selectedCustomBlockId) {
+      return;
+    }
+
+    setCustomBlocks((prev) => prev.map((entry) => (
+      entry.id === selectedCustomBlockId
+        ? {
+            ...entry,
+            behaviorTypes: blockSettings.customBehaviorTypes,
+            settings: { ...blockSettings },
+            updatedAt: new Date().toISOString(),
+          }
+        : entry
+    )));
+  }, [blockSettings, selectedBlock, selectedCustomBlockId]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -118,114 +276,117 @@ export default function Editor() {
     }
   }, [authLoading, isAuthenticated, navigate]);
 
-  // Handle keyboard for editor camera movement (WASD/Arrows) and ESC to exit testing
+  // Handle keyboard input during test play and ESC to exit testing
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isPlaying) {
-        // Only ESC exits testing
-        if (e.key === 'Escape') {
-          stopPlay();
-          return;
-        }
-        // Pass other keys to physics
-        physicsKeyDown(e);
-      } else {
-        // Editor mode - WASD/Arrows move camera
-        keysPressed.current.add(e.key.toLowerCase());
+      if (!isPlaying) {
+        return;
       }
+
+      if (e.key === 'Escape') {
+        stopPlay();
+        return;
+      }
+
+      physicsKeyDown(e);
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (isPlaying) {
-        physicsKeyUp(e);
-      } else {
-        keysPressed.current.delete(e.key.toLowerCase());
+      if (!isPlaying) {
+        return;
       }
+
+      physicsKeyUp(e);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
 
-    // Track mouse position for edge panning
-    const handleMouseMove = (e: MouseEvent) => {
-      mousePosRef.current = { x: e.clientX, y: e.clientY };
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
     };
-    window.addEventListener('mousemove', handleMouseMove);
+  }, [isPlaying, physicsKeyDown, physicsKeyUp]);
+
+  // Editor camera movement shortcuts when not playing.
+  useEffect(() => {
+    if (isPlaying) {
+      return;
+    }
+
+    const isTypingTarget = (target: EventTarget | null) => {
+      const element = target as HTMLElement | null;
+      if (!element) return false;
+      const tag = element.tagName?.toLowerCase();
+      return tag === 'input' || tag === 'textarea' || tag === 'select' || element.isContentEditable;
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) {
+        return;
+      }
+
+      keysPressedRef.current.add(event.key.toLowerCase());
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      keysPressedRef.current.delete(event.key.toLowerCase());
+    };
+
+    const moveCamera = () => {
+      const speed = 16;
+      let dx = 0;
+      let dy = 0;
+
+      if (keysPressedRef.current.has('w') || keysPressedRef.current.has('arrowup')) dy -= speed;
+      if (keysPressedRef.current.has('s') || keysPressedRef.current.has('arrowdown')) dy += speed;
+      if (keysPressedRef.current.has('a') || keysPressedRef.current.has('arrowleft')) dx -= speed;
+      if (keysPressedRef.current.has('d') || keysPressedRef.current.has('arrowright')) dx += speed;
+
+      if (dx !== 0 || dy !== 0) {
+        setCameraX((prev) => Math.max(-LEVEL_WIDTH, Math.min(LEVEL_WIDTH, prev + dx)));
+        setCameraY((prev) => Math.max(-1000, Math.min(1000, prev + dy)));
+      }
+
+      gameLoopRef.current = requestAnimationFrame(moveCamera);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    gameLoopRef.current = requestAnimationFrame(moveCamera);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('mousemove', handleMouseMove);
+      keysPressedRef.current.clear();
+      if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
     };
-  }, [isPlaying, physicsKeyDown, physicsKeyUp]);
-
-  // Editor camera movement loop
-  useEffect(() => {
-    if (isPlaying) return;
-
-    const moveCamera = () => {
-      const speed = 10;
-      const edgePanSpeed = 8;
-      const edgeThreshold = 50; // pixels from edge
-      let dx = 0, dy = 0;
-
-      // Keyboard controls
-      if (keysPressed.current.has('w') || keysPressed.current.has('arrowup')) dy = -speed;
-      if (keysPressed.current.has('s') || keysPressed.current.has('arrowdown')) dy = speed;
-      if (keysPressed.current.has('a') || keysPressed.current.has('arrowleft')) dx = -speed;
-      if (keysPressed.current.has('d') || keysPressed.current.has('arrowright')) dx = speed;
-
-      // Mouse edge panning
-      const canvases = document.querySelectorAll('canvas');
-      if (canvases.length > 0) {
-        const canvas = canvases[0] as HTMLCanvasElement;
-        const rect = canvas.getBoundingClientRect();
-        const mouseX = mousePosRef.current.x;
-        const mouseY = mousePosRef.current.y;
-
-        // Check if mouse is within canvas bounds
-        if (mouseX >= rect.left && mouseX <= rect.right && mouseY >= rect.top && mouseY <= rect.bottom) {
-          // Horizontal edge panning
-          if (mouseX - rect.left < edgeThreshold) {
-            dx = -edgePanSpeed;
-          } else if (rect.right - mouseX < edgeThreshold) {
-            dx = edgePanSpeed;
-          }
-
-          // Vertical edge panning
-          if (mouseY - rect.top < edgeThreshold) {
-            dy = -edgePanSpeed;
-          } else if (rect.bottom - mouseY < edgeThreshold) {
-            dy = edgePanSpeed;
-          }
-        }
-      }
-
-      if (dx !== 0 || dy !== 0) {
-        setCameraX(prev => Math.max(-LEVEL_WIDTH, Math.min(LEVEL_WIDTH, prev + dx)));
-        setCameraY(prev => Math.max(-1000, Math.min(500, prev + dy)));
-      }
-
-      requestAnimationFrame(moveCamera);
-    };
-
-    const animId = requestAnimationFrame(moveCamera);
-    return () => cancelAnimationFrame(animId);
   }, [isPlaying]);
 
   // Find spawn and goal points
   const getSpawnPoint = useCallback((lastCheckpoint?: { x: number; y: number }) => {
     // Prioritize checkpoint if available
     if (lastCheckpoint) return lastCheckpoint;
-    const spawn = blocks.find(b => b.type === 'spawn');
+    const spawn = blocks.find((block) => blockHasBehavior(block, 'spawn'));
     // Always start at left of the level
     return spawn ? { x: spawn.x, y: spawn.y - 32 } : { x: 64, y: GROUND_Y - 96 };
   }, [blocks]);
 
   const goalPosition = useMemo(() => {
-    const goal = blocks.find(b => b.type === 'goal');
+    const goal = blocks.find((block) => blockHasBehavior(block, 'goal'));
     return goal ? { x: goal.x, y: goal.y } : null;
   }, [blocks]);
+
+  const recordSurvivalValidation = useCallback((timeSeconds: number) => {
+    if (timeSeconds <= 0) return;
+    setCompletionTime((prev) => Math.max(prev || 0, timeSeconds));
+    setHasBeenValidated(true);
+    setMaxTime((prev) => {
+      const fallback = Math.max(15, Math.floor(timeSeconds));
+      return Math.min(fallback, prev > 0 ? Math.min(prev, fallback) : fallback);
+    });
+    toast.success(`Survival validated at ${timeSeconds}s. Publish target can be any time up to that run.`);
+  }, []);
 
   // Start playing
   const startPlay = useCallback(() => {
@@ -249,6 +410,10 @@ export default function Editor() {
 
   // Stop playing
   const stopPlay = useCallback(() => {
+    if (isPlaying && levelMode === 'survival' && testStartTimeRef.current) {
+      const timeSeconds = Math.max(1, Math.floor((Date.now() - testStartTimeRef.current) / 1000));
+      recordSurvivalValidation(timeSeconds);
+    }
     setIsPlaying(false);
     setPlayer(null);
     setCameraX(-100);
@@ -260,7 +425,7 @@ export default function Editor() {
     setBlocks(prev => prev.map(b => 
       b.type === 'crumbling' ? { ...b, crumbleState: 'solid' } : b
     ));
-  }, [resetCrumbleTimers, resetRotationAngles]);
+  }, [isPlaying, levelMode, recordSurvivalValidation, resetCrumbleTimers, resetRotationAngles]);
 
   // Update block (for crumbling)
   const updateBlock = useCallback((id: string, updates: Partial<Block>) => {
@@ -278,11 +443,11 @@ export default function Editor() {
         
         // Update camera X to follow player
         const targetCameraX = Math.max(-LEVEL_WIDTH, updated.x - CANVAS_WIDTH / 3);
-        setCameraX(prevCam => prevCam + (targetCameraX - prevCam) * cameraSpeed);
+        setCameraX(prevCam => prevCam + (targetCameraX - prevCam) * 0.1);
         
         // Update camera Y to follow player
         const targetCameraY = Math.max(-1000, Math.min(1000, updated.y - CANVAS_HEIGHT / 2));
-        setCameraY(prevCamY => prevCamY + (targetCameraY - prevCamY) * cameraSpeed);
+        setCameraY(prevCamY => prevCamY + (targetCameraY - prevCamY) * 0.1);
 
         // Check win/death
         if (updated.hasWon && !prev.hasWon) {
@@ -293,6 +458,15 @@ export default function Editor() {
           toast.success(`Level Complete in ${timeSeconds}s! You can now publish this level.`);
         }
         if (updated.isDead && !prev.isDead) {
+          if (levelMode === 'survival') {
+            const survivedSeconds = Math.max(1, Math.floor((Date.now() - testStartTimeRef.current) / 1000));
+            recordSurvivalValidation(survivedSeconds);
+            setTimeout(() => {
+              setIsPlaying(false);
+              setPlayer(null);
+            }, 0);
+            return { ...updated, isDead: true };
+          }
           setTimeout(() => {
             const spawnPoint = getSpawnPoint(updated.lastCheckpoint);
             setPlayer({
@@ -320,7 +494,7 @@ export default function Editor() {
     return () => {
       if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
     };
-  }, [isPlaying, player, blocks, updatePlayer, getSpawnPoint, updateBlock, profile?.avatar_color, cameraY]);
+  }, [isPlaying, player, blocks, updatePlayer, getSpawnPoint, updateBlock, profile?.avatar_color, cameraY, levelMode, recordSurvivalValidation]);
 
   // Overlap detection utility
   const blocksOverlap = useCallback((a: Block, b: Block): boolean => {
@@ -335,6 +509,16 @@ export default function Editor() {
   // Place block
   const handlePlaceBlock = useCallback((x: number, y: number) => {
     if (!selectedBlock) return;
+
+    if (selectedBlock === 'custom' && !selectedCustomBlock) {
+      toast.error('Create or select a custom BLOX first.');
+      return;
+    }
+
+    if (!isSpriteReadyBlock(selectedBlock)) {
+      toast.error('That block is disabled until a custom sprite is added.');
+      return;
+    }
 
     // Snap to grid absolutely to prevent off-grid placement
     x = Math.round(x / GRID_SIZE) * GRID_SIZE;
@@ -358,14 +542,7 @@ export default function Editor() {
         pivotId: linkingPivotId,
         originalX: x,
         originalY: y,
-        direction: selectedBlock === 'conveyor' ? blockSettings.conveyorDirection :
-                   selectedBlock === 'ramp' ? blockSettings.rampDirection : undefined,
-        moveSpeed: selectedBlock === 'conveyor' ? blockSettings.conveyorSpeed : 
-                   selectedBlock === 'moving' ? blockSettings.moveSpeed : undefined,
-        moveRange: selectedBlock === 'moving' ? blockSettings.moveRange : undefined,
-        crumbleState: selectedBlock === 'crumbling' ? 'solid' : undefined,
-        crumbleTime: selectedBlock === 'crumbling' ? blockSettings.crumbleTime : undefined,
-        resetTime: selectedBlock === 'crumbling' ? blockSettings.resetTime : undefined,
+        ...buildBlockFieldOverrides(selectedBlock, blockSettings, selectedCustomBlockId),
       };
       setBlocks(prev => [...prev, newBlock]);
       toast.success('Block linked to rotating beam!');
@@ -447,47 +624,8 @@ export default function Editor() {
       y,
       width: blockWidth,
       height: blockHeight,
-      // Conveyor
-      direction: selectedBlock === 'conveyor' ? blockSettings.conveyorDirection :
-                 selectedBlock === 'ramp' ? blockSettings.rampDirection : undefined,
-      // Speed settings
-      moveSpeed: selectedBlock === 'conveyor' ? blockSettings.conveyorSpeed : 
-                 selectedBlock === 'moving' ? blockSettings.moveSpeed : undefined,
-      moveRange: selectedBlock === 'moving' ? blockSettings.moveRange : undefined,
+      ...buildBlockFieldOverrides(selectedBlock, blockSettings, selectedCustomBlockId),
       originalX: selectedBlock === 'moving' ? x : undefined,
-      // Crumbling
-      crumbleState: selectedBlock === 'crumbling' ? 'solid' : undefined,
-      crumbleTime: selectedBlock === 'crumbling' ? blockSettings.crumbleTime : undefined,
-      resetTime: selectedBlock === 'crumbling' ? blockSettings.resetTime : undefined,
-      // Spawn ghost mode
-      isGhost: selectedBlock === 'spawn' ? blockSettings.spawnIsGhost : undefined,
-      // Low gravity
-      gravityMultiplier: selectedBlock === 'low_gravity' ? blockSettings.gravityMultiplier : undefined,
-      // Tentacle
-      tentacleRadius: selectedBlock === 'tentacle' ? blockSettings.tentacleRadius : undefined,
-      tentacleForce: selectedBlock === 'tentacle' ? blockSettings.tentacleForce : undefined,
-      // Speed gate
-      speedMultiplier: selectedBlock === 'speed_gate' ? blockSettings.speedMultiplier : undefined,
-      speedDuration: selectedBlock === 'speed_gate' ? blockSettings.speedDuration : undefined,
-      // Ramp
-      rampDirection: selectedBlock === 'ramp' ? blockSettings.rampDirection : undefined,
-      rampColor: selectedBlock === 'ramp' ? blockSettings.rampColor : undefined,
-      platformColor: selectedBlock === 'platform' ? blockSettings.platformColor : undefined,
-      // Push block
-      pushBlockShape: selectedBlock === 'push_block' ? blockSettings.pushBlockShape : undefined,
-      pushBlockWeight: selectedBlock === 'push_block' ? blockSettings.pushBlockWeight : undefined,
-      // Cannon
-      cannonAngle: selectedBlock === 'cannon' ? blockSettings.cannonAngle : undefined,
-      cannonArc: selectedBlock === 'cannon' ? blockSettings.cannonArc : undefined,
-      cannonInterval: selectedBlock === 'cannon' ? blockSettings.cannonInterval : undefined,
-      // Wind
-      windForce: selectedBlock === 'wind' ? blockSettings.windForce : undefined,
-      windDirection: selectedBlock === 'wind' ? blockSettings.windDirection : undefined,
-      // Water
-      waterDensity: selectedBlock === 'water' ? blockSettings.waterDensity : undefined,
-      // Ice ramp
-      isSlopeIce: selectedBlock === 'ice' && blockSettings.iceSlope !== undefined ? true : undefined,
-      iceSlope: selectedBlock === 'ice' ? blockSettings.iceSlope : undefined,
     };
 
     // Check for overlaps with existing blocks
@@ -499,12 +637,13 @@ export default function Editor() {
 
     setBlocks(prev => [...prev, newBlock]);
     setHasBeenValidated(false);
-  }, [selectedBlock, linkingPivotId, linkingTeleporterId, blockSettings, blocks, blocksOverlap]);
+  }, [selectedBlock, selectedCustomBlock, selectedCustomBlockId, linkingPivotId, linkingTeleporterId, blockSettings, blocks, blocksOverlap]);
 
   // Handle drag-to-draw for draggable blocks
   const handleDragPlace = useCallback((startX: number, startY: number, endX: number, endY: number) => {
     if (!selectedBlock) return;
-    if (!['platform', 'ice', 'conveyor', 'hazard', 'crumbling', 'water', 'wind'].includes(selectedBlock)) return;
+    if (!['platform', 'ice', 'conveyor', 'hazard', 'crumbling', 'water', 'wind', 'phase_platform', 'pulse_hazard'].includes(selectedBlock)) return;
+    if (!isSpriteReadyBlock(selectedBlock)) return;
 
     // Require minimum drag distance to prevent accidental block creation
     const dragDistance = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
@@ -539,16 +678,7 @@ export default function Editor() {
           y,
           width: GRID_SIZE,
           height: GRID_SIZE,
-          platformColor: selectedBlock === 'platform' ? blockSettings.platformColor : undefined,
-          direction: selectedBlock === 'conveyor' ? blockSettings.conveyorDirection :
-                     selectedBlock === 'wind' ? blockSettings.windDirection : undefined,
-          moveSpeed: selectedBlock === 'conveyor' ? blockSettings.conveyorSpeed : undefined,
-          crumbleState: selectedBlock === 'crumbling' ? 'solid' : undefined,
-          crumbleTime: selectedBlock === 'crumbling' ? blockSettings.crumbleTime : undefined,
-          resetTime: selectedBlock === 'crumbling' ? blockSettings.resetTime : undefined,
-          waterDensity: selectedBlock === 'water' ? blockSettings.waterDensity : undefined,
-          windForce: selectedBlock === 'wind' ? blockSettings.windForce : undefined,
-          windDirection: selectedBlock === 'wind' ? blockSettings.windDirection : undefined,
+          ...buildBlockFieldOverrides(selectedBlock, blockSettings, selectedCustomBlockId),
         });
       }
     }
@@ -557,7 +687,7 @@ export default function Editor() {
       setBlocks(prev => [...prev, ...newBlocks]);
       setHasBeenValidated(false);
     }
-  }, [selectedBlock, blocks, blockSettings]);
+  }, [selectedBlock, selectedCustomBlockId, blocks, blockSettings]);
 
   // Remove block
   const handleRemoveBlock = useCallback((id: string) => {
@@ -565,6 +695,9 @@ export default function Editor() {
     if (block?.isLocked) return;
     
     setBlocks(prev => prev.filter(b => b.id !== id));
+    if (selectedPlacedBlockId === id) {
+      setSelectedPlacedBlockId(null);
+    }
     setHasBeenValidated(false);
     
     if (id === linkingPivotId) {
@@ -573,7 +706,18 @@ export default function Editor() {
     if (id === linkingTeleporterId) {
       setLinkingTeleporterId(null);
     }
-  }, [blocks, linkingPivotId, linkingTeleporterId]);
+  }, [blocks, linkingPivotId, linkingTeleporterId, selectedPlacedBlockId]);
+
+  const handleSelectExistingBlock = useCallback((id: string) => {
+    setSelectedPlacedBlockId(id);
+    setEditorTool('edit');
+  }, []);
+
+  const handleUpdateSelectedPlacedBlock = useCallback((updates: Partial<Block>) => {
+    if (!selectedPlacedBlockId) return;
+    setBlocks((prev) => prev.map((b) => (b.id === selectedPlacedBlockId ? { ...b, ...updates } : b)));
+    setHasBeenValidated(false);
+  }, [selectedPlacedBlockId]);
 
   // Move block (Shift+drag)
   const handleMoveBlock = useCallback((id: string, newX: number, newY: number) => {
@@ -598,6 +742,9 @@ export default function Editor() {
     setLinkingPivotId(null);
     setLinkingTeleporterId(null);
     setCompletionTime(null);
+    setTrackUrl('');
+    setTrackTitle('');
+    setTrackArtist('');
     toast.info('Level cleared');
   };
 
@@ -613,7 +760,7 @@ export default function Editor() {
   // Save/publish level
   const handlePublish = async () => {
     if (!hasBeenValidated) {
-      toast.error('You must complete the level before publishing!');
+      toast.error(levelMode === 'survival' ? 'You must survive in a test run before publishing!' : 'You must complete the level before publishing!');
       return;
     }
 
@@ -622,21 +769,31 @@ export default function Editor() {
       return;
     }
 
-    const hasSpawn = blocks.some(b => b.type === 'spawn');
-    const hasGoal = blocks.some(b => b.type === 'goal');
+    const hasSpawn = blocks.some((block) => blockHasBehavior(block, 'spawn'));
+    const hasGoal = blocks.some((block) => blockHasBehavior(block, 'goal'));
 
-    if (!hasSpawn || !hasGoal) {
-      toast.error('Level must have both a spawn point and a goal!');
-      return;
-    }
-
-    if (completionTime && maxTime <= completionTime) {
-      toast.error('Max time must be longer than your completion time!');
+    if (!hasSpawn || (levelMode === 'race' && !hasGoal)) {
+      toast.error(levelMode === 'survival' ? 'Survival levels need at least a spawn point!' : 'Level must have both a spawn point and a goal!');
       return;
     }
 
     if (maxTime > MAX_LEVEL_TIME) {
       toast.error(`Max time cannot exceed ${MAX_LEVEL_TIME} seconds!`);
+      return;
+    }
+
+    if (levelMode === 'race' && completionTime && maxTime <= completionTime) {
+      toast.error('Max time must be longer than your completion time!');
+      return;
+    }
+
+    if (levelMode === 'survival' && completionTime && maxTime > completionTime) {
+      toast.error('Survival target cannot be longer than your best validated survival run!');
+      return;
+    }
+
+    if (trackUrl.trim() && !parsedTrack?.isSupported) {
+      toast.error(parsedTrack?.error || 'Enter a Spotify, Apple Music, YouTube, or direct audio link.');
       return;
     }
 
@@ -646,28 +803,55 @@ export default function Editor() {
     try {
       const blocksToSave = blocks.filter(b => !b.isLocked);
       
-      const created = await createLevel(
-        levelName,
-        user.id,
-        profile.display_name,
-        blocksToSave,
-        true,
-        maxTime,
-        allowImport,
-        trackUrl,
-        gridSize
-      );
-      
-      try {
-        await navigator.clipboard.writeText(created.id);
-        toast.success('Level published! ID copied to clipboard.');
-      } catch {
-        toast.success(`Level published! ID: ${created.id}`);
+      if (editLevel) {
+        // Update existing level instead of creating a new one
+        await updateLevel(editLevel.id, {
+          name: levelName,
+          blocks: blocksToSave,
+          validated: true,
+          allowImport: false,
+          mode: levelMode,
+          max_time_seconds: levelMode === 'race' ? maxTime : undefined,
+          survival_time_seconds: levelMode === 'survival' ? maxTime : undefined,
+          trackUrl: parsedTrack?.normalizedUrl || '',
+          trackTitle: trackTitle.trim(),
+          trackArtist: trackArtist.trim(),
+          texturePack: texturePack || undefined,
+          gridSize,
+          customBlocks,
+        });
+        toast.success('Level updated!');
+      } else {
+        const created = await createLevel(
+          levelName,
+          user.id,
+          profile.display_name,
+          blocksToSave,
+          true,
+          maxTime,
+          false,
+          parsedTrack?.normalizedUrl || '',
+          trackTitle.trim(),
+          trackArtist.trim(),
+          gridSize,
+          texturePack || undefined,
+          levelMode,
+          levelMode === 'survival' ? maxTime : undefined,
+          customBlocks,
+        );
+        
+        try {
+          await navigator.clipboard.writeText(created.id);
+          toast.success('Level published! ID copied to clipboard.');
+        } catch {
+          toast.success(`Level published! ID: ${created.id}`);
+        }
       }
       navigate('/browse');
     } catch (error) {
       console.error('Failed to publish:', error);
-      toast.error('Failed to publish level. Please try again.');
+      const message = error instanceof Error ? error.message : 'Failed to publish level. Please try again.';
+      toast.error(message);
     } finally {
       setIsPublishing(false);
     }
@@ -702,13 +886,13 @@ export default function Editor() {
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
-        <h1 className="font-pixel text-2xl text-primary mb-4">Sign In Required</h1>
+        <h1 className="font-pixel text-2xl text-primary mb-4">Account Required</h1>
         <p className="font-pixel-body text-muted-foreground text-lg mb-6">
-          You need to sign in to create and publish levels.
+          Create your account with Google to create and publish levels.
         </p>
         <GameButton variant="primary" size="lg" onClick={() => navigate('/auth')}>
           <LogIn size={18} className="mr-2" />
-          Sign In
+          Create Account
         </GameButton>
       </div>
     );
@@ -717,8 +901,9 @@ export default function Editor() {
   return (
     <div className="min-h-screen bg-background p-4">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-4">
+      <div className="mb-4 rounded-md border border-border bg-card/70 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
           <GameButton variant="ghost" size="sm" onClick={() => navigate('/')}>
             <ArrowLeft size={16} className="mr-2" />
             Back
@@ -727,22 +912,46 @@ export default function Editor() {
             type="text"
             value={levelName}
             onChange={e => setLevelName(e.target.value)}
-            className="bg-input border-2 border-border px-3 py-2 font-pixel text-[10px] text-foreground focus:border-primary outline-none"
+            className="min-w-[220px] bg-input border-2 border-border px-3 py-2 font-pixel text-[10px] text-foreground focus:border-primary outline-none"
             placeholder="Level name..."
           />
-
-
-
-          <button
-            onClick={() => setAllowImport(!allowImport)}
-            className={`flex items-center gap-1 px-2 py-1 border transition-colors ${
-              allowImport ? 'bg-primary/20 border-primary' : 'bg-muted/50 border-border'
-            }`}
-            title="Allow others to copy this level"
-          >
-            <span className="font-pixel text-[8px]">{allowImport ? '✓' : '○'} ALLOW COPYING</span>
-          </button>
-          
+          {!isPlaying && (
+            <div className="flex h-[46px] min-w-[180px] items-center border border-border bg-background/40 px-3">
+              <div className="min-w-0">
+                <div className="font-pixel text-[8px] text-primary">Level Mode</div>
+                <div className="mt-1 truncate font-pixel text-[10px] text-foreground capitalize">{levelMode}</div>
+              </div>
+            </div>
+          )}
+          {!isPlaying && (
+            <div className="flex h-[46px] min-w-[220px] items-center gap-2 border border-border bg-background/40 px-3">
+              <Music4 size={14} className="shrink-0 text-primary" />
+              <div className="min-w-0 flex-1">
+                <div className="font-pixel text-[8px] text-primary">Level Song</div>
+                <div className="mt-1 truncate font-pixel-body text-[10px] text-foreground">
+                  {hasSongDetails ? (trackTitle.trim() || trackArtist.trim() || parsedTrack?.providerLabel || 'Song selected') : 'No song selected'}
+                </div>
+              </div>
+              {parsedTrack?.isSupported && parsedTrack.normalizedUrl && (
+                <button
+                  type="button"
+                  className="inline-flex shrink-0 items-center gap-1 border border-border px-2 py-1 font-pixel text-[9px] text-primary hover:bg-muted/40"
+                  onClick={() => window.open(parsedTrack.normalizedUrl, '_blank', 'noopener,noreferrer')}
+                >
+                  <ExternalLink size={11} />
+                  Open
+                </button>
+              )}
+              <GameButton
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => setShowSongEditor((prev) => !prev)}
+              >
+                {hasSongDetails ? 'Edit' : 'Set'}
+              </GameButton>
+            </div>
+          )}
           {linkingPivotId && (
             <div className="flex items-center gap-2">
               <span className="bg-game-beam/20 text-game-beam font-pixel text-[8px] px-2 py-1">
@@ -765,9 +974,9 @@ export default function Editor() {
               </GameButton>
             </div>
           )}
-        </div>
-        
-        <div className="flex items-center gap-2">
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
           {hasBeenValidated && (
             <span className="bg-success/20 text-success font-pixel text-[8px] px-3 py-1 mr-2">
               ✓ VALIDATED ({completionTime}s)
@@ -784,21 +993,8 @@ export default function Editor() {
               Test
             </GameButton>
           )}
-
-          {/* Camera Speed Control */}
-          <div className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded">
-            <span className="font-pixel text-[8px] whitespace-nowrap">Pan Speed</span>
-            <input 
-              type="range" 
-              min="0.01" 
-              max="0.3" 
-              step="0.01" 
-              value={cameraSpeed}
-              onChange={(e) => setCameraSpeed(parseFloat(e.target.value))}
-              className="w-24 h-1"
-              title={`Camera pan speed: ${(cameraSpeed * 100).toFixed(0)}%`}
-            />
-            <span className="font-pixel text-[7px] text-muted-foreground w-8">{(cameraSpeed * 100).toFixed(0)}%</span>
+          <div className="px-3 py-1 border border-border bg-card/70 rounded">
+            <span className="font-pixel text-[9px] text-center">100%</span>
           </div>
           <GameButton variant="outline" size="sm" onClick={handleClear}>
             <Trash2 size={14} className="mr-2" />
@@ -819,8 +1015,71 @@ export default function Editor() {
             disabled={!hasBeenValidated || isPublishing}
           >
             <Save size={14} className="mr-2" />
-            {isPublishing ? 'Publishing...' : 'Publish'}
+            {isPublishing ? (editLevel ? 'Updating...' : 'Publishing...') : (editLevel ? 'Update' : 'Publish')}
           </GameButton>
+        </div>
+
+        {!isPlaying && showSongEditor && (
+          <div className="mt-3 border border-border bg-background/40 px-3 py-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <div className="font-pixel text-[10px] text-primary">Level Song</div>
+                <div className="mt-1 font-pixel-body text-xs text-muted-foreground">Spotify, Apple Music, YouTube, and direct audio links are supported.</div>
+              </div>
+              {levelMode === 'survival' && completionTime ? (
+                <div className="font-pixel text-[9px] text-accent">Best survival: {completionTime}s</div>
+              ) : null}
+            </div>
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                    <input
+                      type="text"
+                      value={trackTitle}
+                      onChange={(e) => setTrackTitle(e.target.value)}
+                      className="w-full bg-input border-2 border-border px-3 py-2 font-pixel-body text-xs text-foreground focus:border-primary outline-none"
+                      placeholder="Song title"
+                    />
+                    <input
+                      type="text"
+                      value={trackArtist}
+                      onChange={(e) => setTrackArtist(e.target.value)}
+                      className="w-full bg-input border-2 border-border px-3 py-2 font-pixel-body text-xs text-foreground focus:border-primary outline-none"
+                      placeholder="Artist / creator"
+                    />
+            </div>
+
+            <input
+              type="url"
+              value={trackUrl}
+              onChange={(e) => setTrackUrl(e.target.value)}
+              className="mt-3 w-full bg-input border-2 border-border px-3 py-2 font-pixel-body text-xs text-foreground focus:border-primary outline-none"
+              placeholder="https://open.spotify.com/track/..."
+            />
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="font-pixel-body text-xs text-muted-foreground">
+                {trackUrl.trim() && parsedTrack
+                  ? parsedTrack.isSupported
+                    ? `${parsedTrack.providerLabel}: ${parsedTrack.helperText}`
+                    : parsedTrack.helperText
+                  : modeDescription}
+              </div>
+
+              {hasSongDetails && (
+                <GameButton
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setTrackUrl('');
+                    setTrackTitle('');
+                    setTrackArtist('');
+                  }}
+                >
+                  Clear Song
+                </GameButton>
+              )}
+            </div>
+          </div>
+        )}
         </div>
       </div>
 
@@ -830,23 +1089,48 @@ export default function Editor() {
         {!isPlaying && (
           <BlockPalette 
             selectedBlock={selectedBlock} 
-            onSelectBlock={setSelectedBlock}
+            selectedCustomBlockId={selectedCustomBlockId}
+            onSelectBlock={(block) => {
+              setSelectedPlacedBlockId(null);
+              setSelectedBlock(block);
+              setEditorTool('place');
+            }}
+            onSelectCustomBlock={(customBlockId) => {
+              const definition = customBlocks.find((entry) => entry.id === customBlockId);
+              setSelectedPlacedBlockId(null);
+              setSelectedBlock('custom');
+              setSelectedCustomBlockId(customBlockId);
+              setEditorTool('place');
+              if (definition) {
+                setBlockSettings({ ...definition.settings, customBehaviorTypes: definition.behaviorTypes });
+              }
+            }}
+            onSaveCustomBlock={handleSaveCustomBlock}
+            onDeleteCustomBlock={handleDeleteCustomBlock}
             blockSettings={blockSettings}
             onSettingsChange={setBlockSettings}
             texturePack={texturePack || undefined}
+            customBlocks={customBlocks}
           />
         )}
 
         {/* Canvas area in center */}
         <div className="flex-1">
+          {!isPlaying && (
+            <div className="mb-2 text-center font-pixel-body text-xs text-muted-foreground">
+              BLOX Settings are on the right panel (or below on smaller screens).
+            </div>
+          )}
           <div className="relative">
             <GameCanvas
               blocks={blocks}
               players={player ? [player] : []}
               isEditing={!isPlaying}
               selectedBlock={selectedBlock}
+              toolMode={editorTool}
               onPlaceBlock={handlePlaceBlock}
               onRemoveBlock={handleRemoveBlock}
+              onSelectExistingBlock={handleSelectExistingBlock}
               onMoveBlock={handleMoveBlock}
               cameraX={cameraX}
               cameraY={cameraY}
@@ -854,30 +1138,67 @@ export default function Editor() {
               onDragPlace={handleDragPlace}
               goalPosition={goalPosition}
               texturePack={texturePack || undefined}
+              customBlocks={customBlocks}
+              scale={EDITOR_SCALE}
+              canvasWidth={editorCanvasWidth}
+              canvasHeight={editorCanvasHeight}
             />
           </div>
 
           {/* Instructions */}
           <div className="mt-4 text-center font-pixel-body text-muted-foreground">
-            {isPlaying ? (
-              <p className="text-lg">
-                <span className="text-primary">WASD</span> or <span className="text-primary">Arrow Keys</span> to move • <span className="text-primary">Space</span> to jump • <span className="text-primary">ESC</span> to exit
-              </p>
-            ) : (
-              <p className="text-lg">
-                <span className="text-primary">WASD</span> or <span className="text-primary">Arrow Keys</span> to move camera • <span className="text-primary">Click</span>/<span className="text-primary">Drag</span> to place • <span className="text-primary">Shift+Drag</span> to move • <span className="text-primary">Right-click</span> to remove
-              </p>
+            {!isPlaying && (
+              <div className="mb-3 inline-flex gap-2">
+                <GameButton
+                  size="sm"
+                  variant={editorTool === 'place' ? 'primary' : 'outline'}
+                  onClick={() => {
+                    setSelectedPlacedBlockId(null);
+                    setEditorTool('place');
+                  }}
+                >
+                  <Brush size={12} className="mr-1" />
+                  Place Tool
+                </GameButton>
+                <GameButton
+                  size="sm"
+                  variant={editorTool === 'edit' ? 'primary' : 'outline'}
+                  onClick={() => setEditorTool('edit')}
+                >
+                  <Edit3 size={12} className="mr-1" />
+                  Edit Tool
+                </GameButton>
+              </div>
             )}
           </div>
+
+          {/* Block settings panel for smaller screens */}
+          {!isPlaying && (
+            <div className="mt-4 xl:hidden">
+              <BlockSettingsPanel
+                selectedBlock={selectedBlock}
+                blockSettings={blockSettings}
+                onSettingsChange={setBlockSettings}
+                selectedPlacedBlock={selectedPlacedBlock}
+                onUpdateSelectedBlock={handleUpdateSelectedPlacedBlock}
+                activeMode={editorTool}
+              />
+            </div>
+          )}
         </div>
 
         {/* Block settings panel on right */}
         {!isPlaying && (
-          <BlockSettingsPanel
-            selectedBlock={selectedBlock}
-            blockSettings={blockSettings}
-            onSettingsChange={setBlockSettings}
-          />
+          <div className="hidden xl:block">
+            <BlockSettingsPanel
+              selectedBlock={selectedBlock}
+              blockSettings={blockSettings}
+              onSettingsChange={setBlockSettings}
+              selectedPlacedBlock={selectedPlacedBlock}
+              onUpdateSelectedBlock={handleUpdateSelectedPlacedBlock}
+              activeMode={editorTool}
+            />
+          </div>
         )}
       </div>
 
@@ -889,9 +1210,11 @@ export default function Editor() {
             
             {/* Maximum Time Section */}
             <div className="mb-6">
-              <h3 className="font-pixel text-xs text-accent mb-3">Maximum Time</h3>
+              <h3 className="font-pixel text-xs text-accent mb-3">{levelMode === 'survival' ? 'Survival Target' : 'Maximum Time'}</h3>
               <p className="font-pixel-body text-muted-foreground text-xs mb-3">
-                Your completion time: <span className="text-success">{formatTime(completionTime || 0)}</span>
+                {levelMode === 'survival'
+                  ? <>Your best survival run: <span className="text-success">{formatTime(completionTime || 0)}</span></>
+                  : <>Your completion time: <span className="text-success">{formatTime(completionTime || 0)}</span></>}
               </p>
               
               <div className="flex items-center gap-4">
@@ -899,9 +1222,9 @@ export default function Editor() {
                 <input
                   type="number"
                   value={maxTime}
-                  onChange={e => setMaxTime(Math.min(MAX_LEVEL_TIME, Math.max((completionTime || 0) + 1, parseInt(e.target.value) || 0)))}
-                  min={(completionTime || 0) + 1}
-                  max={MAX_LEVEL_TIME}
+                  onChange={e => setMaxTime(Math.min(MAX_LEVEL_TIME, Math.max(levelMode === 'survival' ? 1 : (completionTime || 0) + 1, parseInt(e.target.value) || 0)))}
+                  min={levelMode === 'survival' ? 1 : (completionTime || 0) + 1}
+                  max={levelMode === 'survival' ? (completionTime || MAX_LEVEL_TIME) : MAX_LEVEL_TIME}
                   className="bg-input border-2 border-border px-3 py-2 font-pixel text-[10px] text-foreground focus:border-primary outline-none w-24"
                 />
                 <span className="font-pixel-body text-muted-foreground text-xs">seconds ({formatTime(maxTime)})</span>
