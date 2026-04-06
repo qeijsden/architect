@@ -1,6 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::Serialize;
+use std::process::Command;
+
+const STEAM_APP_ID: &str = "480";
+
+#[cfg(target_family = "unix")]
+unsafe extern "C" {
+  fn getppid() -> i32;
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -10,14 +18,64 @@ struct SteamIdentity {
   is_running_in_steam: bool,
 }
 
+fn steam_env_matches_app_id() -> bool {
+  ["SteamAppId", "SteamGameId"]
+    .iter()
+    .filter_map(|key| std::env::var(key).ok())
+    .any(|value| value == STEAM_APP_ID)
+}
+
+#[cfg(target_family = "unix")]
+fn parent_process_looks_like_steam() -> bool {
+  let parent_pid = unsafe { getppid() };
+
+  if parent_pid <= 1 {
+    return false;
+  }
+
+  Command::new("ps")
+    .args(["-p", &parent_pid.to_string(), "-o", "comm="])
+    .output()
+    .ok()
+    .and_then(|output| String::from_utf8(output.stdout).ok())
+    .map(|stdout| {
+      let command = stdout.trim().to_ascii_lowercase();
+      command.contains("steam")
+    })
+    .unwrap_or(false)
+}
+
+#[cfg(not(target_family = "unix"))]
+fn parent_process_looks_like_steam() -> bool {
+  false
+}
+
+fn is_steam_launch_context() -> bool {
+  steam_env_matches_app_id() || parent_process_looks_like_steam()
+}
+
 #[tauri::command]
 fn steam_identity() -> Option<SteamIdentity> {
+  if !is_steam_launch_context() {
+    return None;
+  }
+
   match steamworks::Client::init() {
     Ok((client, _single)) => {
       let user = client.user();
+
+      if !user.logged_on() {
+        return None;
+      }
+
+      let steam_id = user.steam_id().raw();
+      if steam_id == 0 {
+        return None;
+      }
+
       let friends = client.friends();
       Some(SteamIdentity {
-        steam_id: user.steam_id().raw().to_string(),
+        steam_id: steam_id.to_string(),
         persona_name: friends.name().to_string(),
         is_running_in_steam: true,
       })

@@ -3,9 +3,6 @@ import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 const requiredEnv = [
-  'STEAM_APP_ID',
-  'STEAM_DEPOT_WINDOWS',
-  'STEAM_DEPOT_MAC',
   'STEAM_USERNAME',
   'STEAM_PASSWORD',
 ];

@@ -1,6 +1,6 @@
 "DepotBuildConfig"
 {
-  "DepotID" "${STEAM_DEPOT_MAC}"
+  "DepotID" "4335732"
   "ContentRoot" ".."
   "FileMapping"
   {

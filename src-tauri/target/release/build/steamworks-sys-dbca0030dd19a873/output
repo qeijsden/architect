@@ -1,3 +1,0 @@
-cargo:rerun-if-env-changed=STEAM_SDK_LOCATION
-cargo:rustc-link-search=/Users/skullkin9og/Downloads/player-s-playground-main/src-tauri/target/release/build/steamworks-sys-dbca0030dd19a873/out
-cargo:rustc-link-lib=dylib=steam_api

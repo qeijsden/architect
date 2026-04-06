@@ -1,4 +1,4 @@
-Steam Publish (AppID 4333470, Depot 4333471)
+Steam Publish (AppID 4333470, macOS Depot 4335732, Windows Depot 4335731)
 
 ONE COMMAND FROM MAC - build + publish both macOS and Windows:
 git push

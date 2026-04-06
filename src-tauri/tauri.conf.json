@@ -28,6 +28,12 @@
     "targets": "all",
     "category": "Game",
     "shortDescription": "Architect",
+    "macOS": {
+      "files": {
+        "MacOS/libsteam_api.dylib": "steamworks/osx/libsteam_api.dylib",
+        "MacOS/steam_appid.txt": "steam_appid.txt"
+      }
+    },
     "resources": [
       "steamworks/win64/steam_api64.dll",
       "steamworks/win64/steam_api64.lib",
